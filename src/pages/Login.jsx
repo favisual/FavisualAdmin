@@ -40,7 +40,7 @@ export default function Login() {
         <p className="text-xs uppercase tracking-[0.35em] text-neutral-400 mb-3">Acceso</p>
         <h1 className="text-4xl font-semibold mb-4">Entrar al admin</h1>
         <p className="text-neutral-300 mb-8">
-          Usa el usuario que creaste en Supabase Auth para administrar fotos, videos y categorias.
+          Usa tu usuario para administrar fotos, videos y categorias.
         </p>
 
         {!isSupabaseConfigured ? (
