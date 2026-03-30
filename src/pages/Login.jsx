@@ -38,7 +38,7 @@ export default function Login() {
     <section className="min-h-screen flex items-center justify-center px-6 py-16 text-white">
       <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
         <p className="text-xs uppercase tracking-[0.35em] text-neutral-400 mb-3">Acceso</p>
-        <h1 className="text-4xl font-semibold mb-4">Entrar al admin</h1>
+        <h1 className="text-4xl font-semibold mb-4">Entrar al administrador</h1>
         <p className="text-neutral-300 mb-8">
           Usa tu usuario para administrar fotos, videos y categorias.
         </p>
