@@ -145,6 +145,44 @@ function formatRemainingTime(seconds) {
   return `${minutes}m ${remainingSeconds}s restantes`;
 }
 
+function normalizeWhatsAppValue(value) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return "";
+  }
+
+  const normalizedValue =
+    trimmedValue.startsWith("http://") || trimmedValue.startsWith("https://")
+      ? trimmedValue
+      : trimmedValue.startsWith("wa.me/") || trimmedValue.startsWith("api.whatsapp.com/")
+        ? `https://${trimmedValue}`
+        : "";
+
+  if (normalizedValue) {
+    try {
+      const url = new URL(normalizedValue);
+      const isWhatsAppHost =
+        /(^|\.)wa\.me$/i.test(url.hostname) || /(^|\.)whatsapp\.com$/i.test(url.hostname);
+
+      if (isWhatsAppHost) {
+        if (/^wa\.me$/i.test(url.hostname)) {
+          const digits = url.pathname.replace(/\D/g, "");
+          return digits ? `https://wa.me/${digits}` : trimmedValue;
+        }
+
+        const phone = url.searchParams.get("phone")?.replace(/\D/g, "");
+        return phone ? `https://wa.me/${phone}` : trimmedValue;
+      }
+    } catch {
+      return trimmedValue;
+    }
+  }
+
+  const digits = trimmedValue.replace(/\D/g, "");
+  return digits ? `https://wa.me/${digits}` : trimmedValue;
+}
+
 function getMaxUploadBytes(type) {
   return (type === "video" ? MAX_VIDEO_UPLOAD_MB : MAX_IMAGE_UPLOAD_MB) * 1024 * 1024;
 }
@@ -902,17 +940,20 @@ export default function AdminPage() {
 
     try {
       setUploadingLabel("Guardando contacto...");
+      const normalizedWhatsApp = normalizeWhatsAppValue(contactForm.whatsapp);
+
       await updateContact({
         title: contactForm.title.trim(),
         intro: contactForm.intro.trim(),
         email: contactForm.email.trim(),
         phone: contactForm.phone.trim(),
-        whatsapp: contactForm.whatsapp.trim(),
+        whatsapp: normalizedWhatsApp,
         instagram: contactForm.instagram.trim(),
         facebook: contactForm.facebook.trim(),
         ctaLabel: contactForm.ctaLabel.trim() || "Escribenos",
         homeSettings,
       });
+      setContactForm((current) => ({ ...current, whatsapp: normalizedWhatsApp }));
       setNotice("Contacto actualizado.");
     } catch (contactError) {
       setNotice(contactError.message || "No se pudo actualizar el contacto.", "error");
