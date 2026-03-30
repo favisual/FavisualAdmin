@@ -18,14 +18,14 @@ function ContactRow({ icon, label, href, value, iconClassName = "text-white", ic
       href={href}
       target={href?.startsWith("http") ? "_blank" : undefined}
       rel={href?.startsWith("http") ? "noreferrer" : undefined}
-      className="group flex items-start sm:items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 transition-colors hover:bg-white/[0.07]"
+      className="group flex w-full min-w-0 max-w-full items-start gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 transition-colors hover:bg-white/[0.07] sm:items-center"
     >
       <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl shadow-lg sm:h-12 sm:w-12 ${iconWrapperClassName}`}>
         <span className={iconClassName}>{icon}</span>
       </div>
-      <div className="min-w-0">
-        <p className="text-[11px] uppercase tracking-[0.28em] text-neutral-500">{label}</p>
-        <p className="mt-1 break-words text-sm sm:text-base text-white group-hover:text-amber-100">{value}</p>
+      <div className="min-w-0 max-w-full flex-1">
+        <p className="text-[11px] uppercase tracking-[0.22em] sm:tracking-[0.28em] text-neutral-500">{label}</p>
+        <p className="mt-1 break-all text-sm sm:text-base text-white group-hover:text-amber-100 sm:break-words">{value}</p>
       </div>
     </a>
   );
