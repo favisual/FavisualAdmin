@@ -58,13 +58,32 @@ function buildWhatsAppHref(baseUrl, card) {
     .filter(Boolean)
     .join(" ");
 
+  const rawValue = baseUrl.trim();
+  const normalizedValue = rawValue.startsWith("http://") || rawValue.startsWith("https://")
+    ? rawValue
+    : rawValue.startsWith("wa.me/") || rawValue.startsWith("api.whatsapp.com/")
+      ? `https://${rawValue}`
+      : rawValue;
+
   try {
-    const url = new URL(baseUrl);
-    url.searchParams.set("text", message);
-    return url.toString();
+    const url = new URL(normalizedValue);
+    const isWhatsAppHost = /(^|\.)wa\.me$/i.test(url.hostname) || /(^|\.)whatsapp\.com$/i.test(url.hostname);
+
+    if (isWhatsAppHost) {
+      url.searchParams.set("text", message);
+      return url.toString();
+    }
   } catch {
-    return baseUrl;
+    // Continue with phone normalization below.
   }
+
+  const digits = rawValue.replace(/\D/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
 
 function PackageCard({ card, whatsappUrl, desktop = false }) {
