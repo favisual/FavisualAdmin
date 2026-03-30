@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FaEnvelope, FaFacebookF, FaInstagram, FaPhoneAlt, FaWhatsapp } from "react-icons/fa";
 import { getDefaultGalleryStore, resetGalleryStore, saveGalleryStore, slugifyCategoryName } from "../data/galleryStore";
 import { isSupabaseConfigured, supabaseBucket } from "../lib/supabaseClient";
@@ -47,10 +47,13 @@ const emptyHomeForm = {
   heroTitle: "",
   heroCtaLabel: "Ahora",
   heroCtaHref: "/contacto",
+  heroSecondaryCtaLabel: "Ver categorias",
+  heroSecondaryCtaHref: "/categories",
   heroMediaType: "sequence",
   heroImage: "",
   heroImagesText: "",
   heroVideo: "",
+  categoriesTitle: "",
   parallaxTitle: "",
   parallaxIntro: "",
   parallaxCtaLabel: "Reserva tu sesion",
@@ -59,6 +62,9 @@ const emptyHomeForm = {
 };
 
 const ADMIN_MEDIA_ITEMS_PER_PAGE = 6;
+const MAX_IMAGE_UPLOAD_MB = 15;
+const MAX_VIDEO_UPLOAD_MB = 45;
+const MIN_GLOBAL_LOADER_MS = 450;
 const ADMIN_SECTIONS = [
   { id: "categorias", label: "Categorias" },
   { id: "media", label: "Fotos y videos" },
@@ -105,6 +111,60 @@ function buildVisiblePages(totalPages, currentPage) {
   return [1, currentPage - 1, currentPage, currentPage + 1, totalPages];
 }
 
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 MB";
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTransferSpeed(bytesPerSecond) {
+  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+    return "Calculando velocidad...";
+  }
+
+  if (bytesPerSecond >= 1024 * 1024) {
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+  }
+
+  return `${(bytesPerSecond / 1024).toFixed(0)} KB/s`;
+}
+
+function formatRemainingTime(seconds) {
+  if (!Number.isFinite(seconds) || seconds === null || seconds < 0) {
+    return "Calculando tiempo restante...";
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s restantes`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s restantes`;
+}
+
+function getMaxUploadBytes(type) {
+  return (type === "video" ? MAX_VIDEO_UPLOAD_MB : MAX_IMAGE_UPLOAD_MB) * 1024 * 1024;
+}
+
+function validateFileSize(file, type) {
+  if (!file) {
+    return "";
+  }
+
+  const maxBytes = getMaxUploadBytes(type);
+
+  if (file.size > maxBytes) {
+    return `El archivo ${file.name} pesa ${formatFileSize(file.size)}. El maximo permitido para ${
+      type === "video" ? "videos" : "imagenes"
+    } es ${type === "video" ? MAX_VIDEO_UPLOAD_MB : MAX_IMAGE_UPLOAD_MB} MB.`;
+  }
+
+  return "";
+}
+
 export default function AdminPage() {
   const { user, signOut } = useAuth();
   const {
@@ -112,14 +172,18 @@ export default function AdminPage() {
     store,
     loading,
     saving,
+    uploadProgress,
     error,
     mode,
     packages,
     contact,
     homeSettings,
     createCategory,
+    updateCategory,
     deleteCategory,
+    reorderCategories,
     createMediaItem,
+    updateMediaItem,
     removeMediaItem,
     reorderMediaItems,
     createPackage,
@@ -135,9 +199,13 @@ export default function AdminPage() {
   const [contactForm, setContactForm] = useState(emptyContactForm);
   const [homeForm, setHomeForm] = useState(emptyHomeForm);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState("");
+  const [editingMediaId, setEditingMediaId] = useState("");
   const [editingPackageId, setEditingPackageId] = useState("");
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
+  const [uploadingLabel, setUploadingLabel] = useState("");
+  const [visibleLoaderText, setVisibleLoaderText] = useState("");
   const [coverFile, setCoverFile] = useState(null);
   const [heroImageFile, setHeroImageFile] = useState(null);
   const [heroSequenceFiles, setHeroSequenceFiles] = useState([]);
@@ -147,6 +215,21 @@ export default function AdminPage() {
   const [mediaPage, setMediaPage] = useState(1);
   const [mediaSearch, setMediaSearch] = useState("");
   const [mediaTypeFilter, setMediaTypeFilter] = useState("all");
+  const [draggedCategoryId, setDraggedCategoryId] = useState("");
+  const [dragOverCategoryId, setDragOverCategoryId] = useState("");
+  const [draggedMediaId, setDraggedMediaId] = useState("");
+  const [dragOverMediaId, setDragOverMediaId] = useState("");
+  const [draggedPackageId, setDraggedPackageId] = useState("");
+  const [dragOverPackageId, setDragOverPackageId] = useState("");
+  const coverFileInputRef = useRef(null);
+  const mediaFileInputRef = useRef(null);
+  const mediaThumbnailFileInputRef = useRef(null);
+  const heroImageFileInputRef = useRef(null);
+  const heroSequenceFileInputRef = useRef(null);
+  const heroVideoFileInputRef = useRef(null);
+  const parallaxImageFileInputRef = useRef(null);
+  const loaderShownAtRef = useRef(0);
+  const loaderHideTimeoutRef = useRef(null);
 
   const selectedCategory =
     categories.find((category) => category.id === selectedCategoryId) || categories[0];
@@ -188,6 +271,7 @@ export default function AdminPage() {
     () => buildVisiblePages(totalMediaPages, mediaPage),
     [mediaPage, totalMediaPages]
   );
+  const isMediaReorderDisabled = Boolean(mediaSearch.trim()) || mediaTypeFilter !== "all";
 
   useEffect(() => {
     setMediaPage(1);
@@ -221,10 +305,15 @@ export default function AdminPage() {
       heroTitle: homeSettings?.hero?.title || "",
       heroCtaLabel: homeSettings?.hero?.ctaLabel || "Ahora",
       heroCtaHref: homeSettings?.hero?.ctaHref || "/contacto",
+      heroSecondaryCtaLabel:
+        homeSettings?.hero?.secondaryCtaLabel || "Ver categorias",
+      heroSecondaryCtaHref: homeSettings?.hero?.secondaryCtaHref || "/categories",
       heroMediaType: homeSettings?.hero?.mediaType || "sequence",
       heroImage: homeSettings?.hero?.image || "",
       heroImagesText: (homeSettings?.hero?.images || []).join("\n"),
       heroVideo: homeSettings?.hero?.video || "",
+      categoriesTitle:
+        homeSettings?.categories?.title || "Explora el trabajo por linea visual",
       parallaxTitle: homeSettings?.parallax?.title || "",
       parallaxIntro: homeSettings?.parallax?.intro || "",
       parallaxCtaLabel: homeSettings?.parallax?.ctaLabel || "Reserva tu sesion",
@@ -250,6 +339,117 @@ export default function AdminPage() {
     setMessage(text);
   };
 
+  const resetCoverFileInput = () => {
+    setCoverFile(null);
+
+    if (coverFileInputRef.current) {
+      coverFileInputRef.current.value = "";
+    }
+  };
+
+  const resetInputRef = (inputRef) => {
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+  };
+
+  const resetMediaFileInputs = () => {
+    resetInputRef(mediaFileInputRef);
+    resetInputRef(mediaThumbnailFileInputRef);
+  };
+
+  const resetHomeFileInputs = () => {
+    setHeroImageFile(null);
+    setHeroSequenceFiles([]);
+    setHeroVideoFile(null);
+    setParallaxImageFile(null);
+    resetInputRef(heroImageFileInputRef);
+    resetInputRef(heroSequenceFileInputRef);
+    resetInputRef(heroVideoFileInputRef);
+    resetInputRef(parallaxImageFileInputRef);
+  };
+
+  const formatSelectedFiles = (files) => {
+    if (!files?.length) {
+      return "Ningun archivo seleccionado";
+    }
+
+    return `Archivos seleccionados: ${files.map((file) => file.name).join(", ")}`;
+  };
+
+  const handleValidatedSingleFile = ({ file, type, setter }) => {
+    const validationError = validateFileSize(file, type);
+
+    if (validationError) {
+      setter(null);
+      setNotice(validationError, "error");
+      return false;
+    }
+
+    setter(file || null);
+    return true;
+  };
+
+  const handleValidatedMultiFile = ({ files, type, setter }) => {
+    const invalidFile = files.find((file) => validateFileSize(file, type));
+
+    if (invalidFile) {
+      setter([]);
+      setNotice(validateFileSize(invalidFile, type), "error");
+      return false;
+    }
+
+    setter(files);
+    return true;
+  };
+
+  const uploadButtonLabel = uploadProgress?.active
+    ? `${uploadProgress.percentage}%`
+    : saving
+      ? "Guardando..."
+      : "";
+  const globalLoaderText = uploadProgress?.active
+    ? uploadProgress.label || "Subiendo video..."
+    : uploadingLabel;
+
+  useEffect(() => {
+    if (globalLoaderText) {
+      if (loaderHideTimeoutRef.current) {
+        window.clearTimeout(loaderHideTimeoutRef.current);
+        loaderHideTimeoutRef.current = null;
+      }
+
+      loaderShownAtRef.current = Date.now();
+      setVisibleLoaderText(globalLoaderText);
+      return;
+    }
+
+    if (!visibleLoaderText) {
+      return;
+    }
+
+    const elapsed = Date.now() - loaderShownAtRef.current;
+    const remaining = Math.max(MIN_GLOBAL_LOADER_MS - elapsed, 0);
+
+    loaderHideTimeoutRef.current = window.setTimeout(() => {
+      setVisibleLoaderText("");
+      loaderHideTimeoutRef.current = null;
+    }, remaining);
+
+    return () => {
+      if (loaderHideTimeoutRef.current) {
+        window.clearTimeout(loaderHideTimeoutRef.current);
+        loaderHideTimeoutRef.current = null;
+      }
+    };
+  }, [globalLoaderText, visibleLoaderText]);
+
+  useEffect(() => {
+    if (!saving && !uploadProgress?.active && !uploadingLabel && visibleLoaderText) {
+      setVisibleLoaderText("");
+    }
+  }, [saving, uploadProgress, uploadingLabel, visibleLoaderText]);
+
   const handleCategorySubmit = async (event) => {
     event.preventDefault();
 
@@ -261,34 +461,60 @@ export default function AdminPage() {
       return;
     }
 
-    if (categories.some((category) => category.slug === slug)) {
+    if (
+      categories.some(
+        (category) => category.slug === slug && category.id !== editingCategoryId
+      )
+    ) {
       setNotice("Ya existe una categoria con ese slug.", "error");
       return;
     }
 
     try {
-      const categoryId = await createCategory({
+      setUploadingLabel(coverFile ? "Subiendo portada de categoria..." : "");
+      const payload = {
         name,
         slug,
         cover: categoryForm.cover.trim(),
         description: categoryForm.description.trim(),
         coverFile,
-      });
+      };
+      let categoryId = editingCategoryId;
+
+      if (editingCategoryId) {
+        await updateCategory(editingCategoryId, payload);
+      } else {
+        categoryId = await createCategory(payload);
+      }
 
       setSelectedCategoryId(categoryId);
       setCategoryForm(emptyCategoryForm);
-      setCoverFile(null);
+      setEditingCategoryId("");
+      resetCoverFileInput();
       setNotice(
-        mode === "supabase" ? "Categoria guardada en Supabase." : "Categoria guardada en modo local."
+        editingCategoryId
+          ? "Categoria actualizada."
+          : mode === "supabase"
+            ? "Categoria guardada en Supabase."
+            : "Categoria guardada en modo local."
       );
     } catch (submitError) {
       setNotice(submitError.message || "No se pudo guardar la categoria.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
   const handleDeleteCategory = async (categoryId) => {
     try {
+      setUploadingLabel("Eliminando categoria...");
       await deleteCategory(categoryId);
+
+      if (editingCategoryId === categoryId) {
+        setCategoryForm(emptyCategoryForm);
+        setEditingCategoryId("");
+        resetCoverFileInput();
+      }
 
       if (selectedCategoryId === categoryId) {
         const nextCategory = categories.find((category) => category.id !== categoryId);
@@ -298,7 +524,172 @@ export default function AdminPage() {
       setNotice("Categoria eliminada.");
     } catch (deleteError) {
       setNotice(deleteError.message || "No se pudo eliminar la categoria.", "error");
+    } finally {
+      setUploadingLabel("");
     }
+  };
+
+  const handleCategoryDragStart = (categoryId) => {
+    setDraggedCategoryId(categoryId);
+    setDragOverCategoryId(categoryId);
+  };
+
+  const handleCategoryDragEnter = (categoryId) => {
+    if (!draggedCategoryId || draggedCategoryId === categoryId) {
+      return;
+    }
+
+    setDragOverCategoryId(categoryId);
+  };
+
+  const handleCategoryDragEnd = () => {
+    setDraggedCategoryId("");
+    setDragOverCategoryId("");
+  };
+
+  const handleCategoryDrop = async (targetCategoryId) => {
+    if (!draggedCategoryId || draggedCategoryId === targetCategoryId) {
+      handleCategoryDragEnd();
+      return;
+    }
+
+    const fromIndex = categories.findIndex((category) => category.id === draggedCategoryId);
+    const toIndex = categories.findIndex((category) => category.id === targetCategoryId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      handleCategoryDragEnd();
+      return;
+    }
+
+    try {
+      setUploadingLabel("Reordenando categorias...");
+      await reorderCategories(swapItems(categories, fromIndex, toIndex));
+      setNotice("Orden de categorias actualizado.");
+    } catch (moveError) {
+      setNotice(moveError.message || "No se pudo reordenar la categoria.", "error");
+    } finally {
+      setUploadingLabel("");
+      handleCategoryDragEnd();
+    }
+  };
+
+  const handleMediaDragStart = (mediaId) => {
+    if (isMediaReorderDisabled) {
+      return;
+    }
+
+    setDraggedMediaId(mediaId);
+    setDragOverMediaId(mediaId);
+  };
+
+  const handleMediaDragEnter = (mediaId) => {
+    if (isMediaReorderDisabled) {
+      return;
+    }
+
+    if (!draggedMediaId || draggedMediaId === mediaId) {
+      return;
+    }
+
+    setDragOverMediaId(mediaId);
+  };
+
+  const handleMediaDragEnd = () => {
+    setDraggedMediaId("");
+    setDragOverMediaId("");
+  };
+
+  const handleMediaDrop = async (targetMediaId) => {
+    if (isMediaReorderDisabled) {
+      handleMediaDragEnd();
+      return;
+    }
+
+    if (!selectedCategory || !draggedMediaId || draggedMediaId === targetMediaId) {
+      handleMediaDragEnd();
+      return;
+    }
+
+    const fromIndex = selectedCategory.items.findIndex((item) => item.id === draggedMediaId);
+    const toIndex = selectedCategory.items.findIndex((item) => item.id === targetMediaId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      handleMediaDragEnd();
+      return;
+    }
+
+    try {
+      setUploadingLabel("Reordenando elementos...");
+      await reorderMediaItems(selectedCategory.id, swapItems(selectedCategory.items, fromIndex, toIndex));
+      setNotice("Orden actualizado.");
+    } catch (moveError) {
+      setNotice(moveError.message || "No se pudo reordenar.", "error");
+    } finally {
+      setUploadingLabel("");
+      handleMediaDragEnd();
+    }
+  };
+
+  const handlePackageDragStart = (packageId) => {
+    setDraggedPackageId(packageId);
+    setDragOverPackageId(packageId);
+  };
+
+  const handlePackageDragEnter = (packageId) => {
+    if (!draggedPackageId || draggedPackageId === packageId) {
+      return;
+    }
+
+    setDragOverPackageId(packageId);
+  };
+
+  const handlePackageDragEnd = () => {
+    setDraggedPackageId("");
+    setDragOverPackageId("");
+  };
+
+  const handlePackageDrop = async (targetPackageId) => {
+    if (!draggedPackageId || draggedPackageId === targetPackageId) {
+      handlePackageDragEnd();
+      return;
+    }
+
+    const fromIndex = packages.findIndex((item) => item.id === draggedPackageId);
+    const toIndex = packages.findIndex((item) => item.id === targetPackageId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      handlePackageDragEnd();
+      return;
+    }
+
+    try {
+      setUploadingLabel("Reordenando paquetes...");
+      await reorderPackages(swapItems(packages, fromIndex, toIndex));
+      setNotice("Orden de paquetes actualizado.");
+    } catch (packageError) {
+      setNotice(packageError.message || "No se pudo reordenar el paquete.", "error");
+    } finally {
+      setUploadingLabel("");
+      handlePackageDragEnd();
+    }
+  };
+
+  const startEditingCategory = (category) => {
+    setEditingCategoryId(category.id);
+    setSelectedCategoryId(category.id);
+    setCategoryForm({
+      name: category.name || "",
+      slug: category.slug || "",
+      cover: category.cover || "",
+      description: category.description || "",
+    });
+    resetCoverFileInput();
+  };
+
+  const resetCategoryForm = () => {
+    setCategoryForm(emptyCategoryForm);
+    setEditingCategoryId("");
+    resetCoverFileInput();
   };
 
   const handleMediaSubmit = async (event) => {
@@ -323,36 +714,50 @@ export default function AdminPage() {
     }
 
     try {
-      await createMediaItem({
-        category: selectedCategory,
-        type: mediaForm.type,
-        src,
-        thumbnail,
-        title: mediaForm.title.trim(),
-        mediaFile: mediaForm.mediaFile,
-        thumbnailFile: mediaForm.thumbnailFile,
-      });
+      setUploadingLabel(
+        mediaForm.mediaFile || mediaForm.thumbnailFile
+          ? editingMediaId
+            ? "Actualizando archivos del elemento..."
+            : "Subiendo archivos del elemento..."
+          : editingMediaId
+            ? "Actualizando elemento..."
+            : "Guardando elemento..."
+      );
+      if (editingMediaId) {
+        await updateMediaItem(selectedCategory.id, editingMediaId, {
+          type: mediaForm.type,
+          src,
+          thumbnail,
+          title: mediaForm.title.trim(),
+          mediaFile: mediaForm.mediaFile,
+          thumbnailFile: mediaForm.thumbnailFile,
+        });
+      } else {
+        await createMediaItem({
+          category: selectedCategory,
+          type: mediaForm.type,
+          src,
+          thumbnail,
+          title: mediaForm.title.trim(),
+          mediaFile: mediaForm.mediaFile,
+          thumbnailFile: mediaForm.thumbnailFile,
+        });
+      }
 
       setMediaForm(emptyMediaForm);
+      setEditingMediaId("");
+      resetMediaFileInputs();
       setNotice(
-        mode === "supabase" ? "Elemento guardado en Supabase." : "Elemento guardado en modo local."
+        editingMediaId
+          ? "Elemento actualizado."
+          : mode === "supabase"
+            ? "Elemento guardado en Supabase."
+            : "Elemento guardado en modo local."
       );
     } catch (submitError) {
       setNotice(submitError.message || "No se pudo guardar el elemento.", "error");
-    }
-  };
-
-  const moveMedia = async (index, direction) => {
-    if (!selectedCategory) {
-      return;
-    }
-
-    try {
-      const nextItems = swapItems(selectedCategory.items, index, index + direction);
-      await reorderMediaItems(selectedCategory.id, nextItems);
-      setNotice("Orden actualizado.");
-    } catch (moveError) {
-      setNotice(moveError.message || "No se pudo reordenar.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
@@ -362,11 +767,38 @@ export default function AdminPage() {
     }
 
     try {
+      setUploadingLabel("Eliminando elemento...");
       await removeMediaItem(selectedCategory.id, mediaId);
+      if (editingMediaId === mediaId) {
+        setMediaForm(emptyMediaForm);
+        setEditingMediaId("");
+        resetMediaFileInputs();
+      }
       setNotice("Elemento eliminado.");
     } catch (removeError) {
       setNotice(removeError.message || "No se pudo eliminar el elemento.", "error");
+    } finally {
+      setUploadingLabel("");
     }
+  };
+
+  const startEditingMedia = (item) => {
+    setEditingMediaId(item.id);
+    setMediaForm({
+      type: item.type || "image",
+      src: item.src || "",
+      thumbnail: item.thumbnail || "",
+      title: item.title || "",
+      mediaFile: null,
+      thumbnailFile: null,
+    });
+    resetMediaFileInputs();
+  };
+
+  const resetMediaForm = () => {
+    setMediaForm(emptyMediaForm);
+    setEditingMediaId("");
+    resetMediaFileInputs();
   };
 
   const restoreDefaults = () => {
@@ -417,6 +849,7 @@ export default function AdminPage() {
     }
 
     try {
+      setUploadingLabel(editingPackageId ? "Actualizando paquete..." : "Guardando paquete...");
       if (editingPackageId) {
         await updatePackage(editingPackageId, payload);
         setNotice("Paquete actualizado.");
@@ -428,6 +861,8 @@ export default function AdminPage() {
       resetPackageForm();
     } catch (packageError) {
       setNotice(packageError.message || "No se pudo guardar el paquete.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
@@ -447,6 +882,7 @@ export default function AdminPage() {
 
   const handleDeletePackage = async (packageId) => {
     try {
+      setUploadingLabel("Eliminando paquete...");
       await deletePackage(packageId);
 
       if (editingPackageId === packageId) {
@@ -456,21 +892,8 @@ export default function AdminPage() {
       setNotice("Paquete eliminado.");
     } catch (packageError) {
       setNotice(packageError.message || "No se pudo eliminar el paquete.", "error");
-    }
-  };
-
-  const movePackage = async (index, direction) => {
-    const nextIndex = index + direction;
-
-    if (nextIndex < 0 || nextIndex >= packages.length) {
-      return;
-    }
-
-    try {
-      await reorderPackages(swapItems(packages, index, nextIndex));
-      setNotice("Orden de paquetes actualizado.");
-    } catch (packageError) {
-      setNotice(packageError.message || "No se pudo reordenar el paquete.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
@@ -478,6 +901,7 @@ export default function AdminPage() {
     event.preventDefault();
 
     try {
+      setUploadingLabel("Guardando contacto...");
       await updateContact({
         title: contactForm.title.trim(),
         intro: contactForm.intro.trim(),
@@ -492,6 +916,8 @@ export default function AdminPage() {
       setNotice("Contacto actualizado.");
     } catch (contactError) {
       setNotice(contactError.message || "No se pudo actualizar el contacto.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
@@ -504,15 +930,26 @@ export default function AdminPage() {
       .filter(Boolean);
 
     try {
+      setUploadingLabel(
+        heroImageFile || heroSequenceFiles.length || heroVideoFile || parallaxImageFile
+          ? "Subiendo archivos del home..."
+          : "Guardando home..."
+      );
       await updateHomeSettings({
         hero: {
           title: homeForm.heroTitle.trim() || "Agenda tu sesion de contenido",
           ctaLabel: homeForm.heroCtaLabel.trim() || "Ahora",
           ctaHref: homeForm.heroCtaHref.trim() || "/contacto",
+          secondaryCtaLabel: homeForm.heroSecondaryCtaLabel.trim() || "Ver categorias",
+          secondaryCtaHref: homeForm.heroSecondaryCtaHref.trim() || "/categories",
           mediaType: homeForm.heroMediaType,
           image: homeForm.heroImage.trim(),
           images: heroImages,
           video: homeForm.heroVideo.trim(),
+        },
+        categories: {
+          title:
+            homeForm.categoriesTitle.trim() || "Explora el trabajo por linea visual",
         },
         parallax: {
           title: homeForm.parallaxTitle.trim() || "Captura momentos inolvidables",
@@ -529,13 +966,12 @@ export default function AdminPage() {
         parallaxImageFile,
       });
 
-      setHeroImageFile(null);
-      setHeroSequenceFiles([]);
-      setHeroVideoFile(null);
-      setParallaxImageFile(null);
+      resetHomeFileInputs();
       setNotice("Home actualizado.");
     } catch (homeError) {
       setNotice(homeError.message || "No se pudo actualizar el home.", "error");
+    } finally {
+      setUploadingLabel("");
     }
   };
 
@@ -599,7 +1035,76 @@ export default function AdminPage() {
             </div>
           ) : null}
           {error ? <p className="mt-2 text-sm text-red-300">{error}</p> : null}
+          {saving && uploadProgress?.active ? (
+            <div className="mt-4 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-4 text-sm text-sky-100">
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-medium">{uploadProgress.label || "Subiendo video..."}</p>
+                <span className="text-xs font-semibold tabular-nums text-sky-100/80">
+                  {uploadProgress.percentage}%
+                </span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-950/60">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,rgba(125,211,252,0.95),rgba(56,189,248,1))] transition-[width] duration-200"
+                  style={{ width: `${uploadProgress.percentage}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sky-100/75">
+                La subida es resumible. Si la red se pone lenta, el proceso puede continuar.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-sky-100/75">
+                <span>{formatTransferSpeed(uploadProgress.bytesPerSecond)}</span>
+                <span>{formatRemainingTime(uploadProgress.remainingSeconds)}</span>
+                <span>
+                  {formatFileSize(uploadProgress.uploadedBytes)} / {formatFileSize(uploadProgress.totalBytes)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+          {saving && uploadingLabel && !uploadProgress?.active ? (
+            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100">
+              <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-sky-200/40 border-t-sky-100 animate-spin" />
+              <div>
+                <p className="font-medium">{uploadingLabel}</p>
+                <p className="mt-1 text-sky-100/75">
+                  No cierres esta ventana mientras termina la subida.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
+        {visibleLoaderText ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 backdrop-blur-[2px]">
+            <div className="w-full max-w-md rounded-[1.75rem] border border-white/10 bg-neutral-950/95 px-6 py-5 text-white shadow-2xl">
+              <div className="flex items-start gap-4">
+                <span className="mt-1 h-5 w-5 shrink-0 rounded-full border-2 border-amber-200/30 border-t-amber-300 animate-spin" />
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-[0.26em] text-neutral-500">Procesando</p>
+                  <p className="mt-2 text-lg font-medium">{visibleLoaderText}</p>
+                  {uploadProgress?.active ? (
+                    <>
+                      <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-[linear-gradient(90deg,rgba(253,224,71,0.95),rgba(251,146,60,1))] transition-[width] duration-200"
+                          style={{ width: `${uploadProgress.percentage}%` }}
+                        />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-neutral-300">
+                        <span>{uploadProgress.percentage}%</span>
+                        <span>{formatTransferSpeed(uploadProgress.bytesPerSecond)}</span>
+                        <span>{formatRemainingTime(uploadProgress.remainingSeconds)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-neutral-400">
+                      Espera un momento mientras terminamos este cambio.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className="sticky top-20 z-30 -mx-4 px-4 md:-mx-8 md:px-8 lg:top-24 lg:-mx-16 lg:px-16">
           <div className="overflow-x-auto">
@@ -630,7 +1135,27 @@ export default function AdminPage() {
               onSubmit={handleCategorySubmit}
               className="bg-black/10 border border-white/10 rounded-3xl p-6 space-y-4"
             >
-            <h2 className="text-2xl font-semibold">Nueva categoria</h2>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-semibold">
+                  {editingCategoryId ? "Editar categoria" : "Nueva categoria"}
+                </h2>
+                {editingCategoryId ? (
+                  <p className="mt-1 text-sm text-neutral-400">
+                    Si reemplazas el cover en Supabase, el archivo anterior se elimina del storage.
+                  </p>
+                ) : null}
+              </div>
+              {editingCategoryId ? (
+                <button
+                  type="button"
+                  onClick={resetCategoryForm}
+                  className="rounded-full border border-white/15 px-4 py-2 text-sm text-white"
+                >
+                  Cancelar edicion
+                </button>
+              ) : null}
+            </div>
             <label className="block">
               <span className="text-sm text-neutral-300">Nombre</span>
               <input
@@ -675,11 +1200,29 @@ export default function AdminPage() {
             <label className="block">
               <span className="text-sm text-neutral-300">Portada por archivo</span>
               <input
+                ref={coverFileInputRef}
                 type="file"
                 accept="image/*"
-                onChange={(event) => setCoverFile(event.target.files?.[0] || null)}
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] || null;
+                  const isValid = handleValidatedSingleFile({
+                    file: selectedFile,
+                    type: "image",
+                    setter: setCoverFile,
+                  });
+
+                  if (!isValid) {
+                    resetInputRef(coverFileInputRef);
+                  }
+                }}
                 className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
               />
+              <p className="mt-2 text-xs text-neutral-500">
+                {coverFile ? `Archivo seleccionado: ${coverFile.name}` : "Ningun archivo seleccionado"}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
+              </p>
             </label>
             <label className="block">
               <span className="text-sm text-neutral-300">Descripcion</span>
@@ -697,42 +1240,79 @@ export default function AdminPage() {
               disabled={saving}
               className="px-4 py-3 rounded-full bg-amber-300 text-neutral-950 font-semibold disabled:opacity-60"
             >
-              {saving ? "Guardando..." : "Guardar categoria"}
+              {uploadProgress?.active
+                ? `Subiendo video... ${uploadButtonLabel}`
+                : saving
+                  ? "Guardando..."
+                  : editingCategoryId
+                    ? "Actualizar categoria"
+                    : "Guardar categoria"}
             </button>
             </form>
 
             <div className="bg-black/10 border border-white/10 rounded-3xl p-6 space-y-4">
               <div className="flex items-center justify-between gap-4">
-                <h2 className="text-2xl font-semibold">Categorias activas</h2>
+                <div>
+                  <h2 className="text-2xl font-semibold">Categorias activas</h2>
+                  <p className="mt-1 text-sm text-neutral-400">
+                    Arrastra y suelta para cambiar el orden.
+                  </p>
+                </div>
                 <span className="text-sm text-neutral-400">{categories.length} total</span>
               </div>
               <div className="grid gap-3">
-                {categories.map((category) => (
+                {categories.map((category, index) => (
                   <div
                     key={category.id}
-                    className={`rounded-2xl border p-4 ${
+                    draggable={!saving}
+                    onDragStart={() => handleCategoryDragStart(category.id)}
+                    onDragEnter={() => handleCategoryDragEnter(category.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleCategoryDrop(category.id)}
+                    onDragEnd={handleCategoryDragEnd}
+                    className={`rounded-2xl border p-4 transition ${
+                      draggedCategoryId === category.id ? "opacity-50" : ""
+                    } ${
+                      dragOverCategoryId === category.id && draggedCategoryId !== category.id
+                        ? "border-sky-300 bg-sky-400/10"
+                        : ""
+                    } ${
                       selectedCategory?.id === category.id
                         ? "border-amber-300 bg-white/10"
                         : "border-white/10 bg-black/10"
                     }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCategoryId(category.id)}
-                        className="text-left"
-                      >
-                        <p className="font-semibold">{category.name}</p>
-                        <p className="text-sm text-neutral-400">/{category.slug}</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCategory(category.id)}
-                        disabled={saving}
-                        className="px-3 py-1 rounded-full border border-red-400/30 text-red-200 disabled:opacity-60"
-                      >
-                        Eliminar
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <span className="cursor-grab select-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[0.2em] text-neutral-400">
+                          Drag
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCategoryId(category.id)}
+                          className="text-left"
+                        >
+                          <p className="font-semibold">{category.name}</p>
+                          <p className="text-sm text-neutral-400">/{category.slug}</p>
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEditingCategory(category)}
+                          className="px-3 py-1 rounded-full border border-white/15"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCategory(category.id)}
+                          disabled={saving}
+                          className="px-3 py-1 rounded-full border border-red-400/30 text-red-200 disabled:opacity-60"
+                        >
+                          Eliminar
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -750,27 +1330,43 @@ export default function AdminPage() {
               onSubmit={handleMediaSubmit}
               className="bg-black/10 border border-white/10 rounded-3xl p-6 space-y-4"
             >
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="text-2xl font-semibold">Agregar foto o video</h2>
-              <select
-                value={selectedCategory?.id || ""}
-                onChange={(event) => setSelectedCategoryId(event.target.value)}
-                className="rounded-full bg-neutral-950 border border-white/10 px-4 py-2"
-              >
-                {categoryOptions.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="flex items-center justify-between gap-4">
+               <div>
+                 <h2 className="text-2xl font-semibold">
+                   {editingMediaId ? "Editar foto o video" : "Agregar foto o video"}
+                 </h2>
+                 {editingMediaId ? (
+                   <p className="mt-1 text-sm text-neutral-400">
+                     Si cambias el archivo o thumbnail en Supabase, el anterior se elimina del storage.
+                   </p>
+                 ) : null}
+               </div>
+               <select
+                 value={selectedCategory?.id || ""}
+                 onChange={(event) => setSelectedCategoryId(event.target.value)}
+                 className="rounded-full bg-neutral-950 border border-white/10 px-4 py-2"
+               >
+                 {categoryOptions.map((category) => (
+                   <option key={category.id} value={category.id}>
+                     {category.name}
+                   </option>
+                 ))}
+               </select>
+             </div>
             <label className="block">
               <span className="text-sm text-neutral-300">Tipo</span>
               <select
                 value={mediaForm.type}
-                onChange={(event) =>
-                  setMediaForm((current) => ({ ...current, type: event.target.value }))
-                }
+                onChange={(event) => {
+                  setMediaForm((current) => ({
+                    ...current,
+                    type: event.target.value,
+                    mediaFile: null,
+                    thumbnailFile: null,
+                    thumbnail: event.target.value === "video" ? current.thumbnail : "",
+                  }));
+                  resetMediaFileInputs();
+                }}
                 className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
               >
                 <option value="image">Foto</option>
@@ -791,16 +1387,38 @@ export default function AdminPage() {
             <label className="block">
               <span className="text-sm text-neutral-300">Archivo</span>
               <input
+                ref={mediaFileInputRef}
                 type="file"
                 accept={mediaForm.type === "video" ? "video/*" : "image/*"}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] || null;
+                  const isValid = validateFileSize(selectedFile, mediaForm.type);
+
+                  if (isValid) {
+                    setMediaForm((current) => ({
+                      ...current,
+                      mediaFile: null,
+                    }));
+                    resetInputRef(mediaFileInputRef);
+                    setNotice(isValid, "error");
+                    return;
+                  }
+
                   setMediaForm((current) => ({
                     ...current,
-                    mediaFile: event.target.files?.[0] || null,
-                  }))
-                }
+                    mediaFile: selectedFile,
+                  }));
+                }}
                 className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
               />
+              <p className="mt-2 text-xs text-neutral-500">
+                {mediaForm.mediaFile
+                  ? `Archivo seleccionado: ${mediaForm.mediaFile.name}`
+                  : "Ningun archivo seleccionado"}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                Maximo recomendado: {mediaForm.type === "video" ? MAX_VIDEO_UPLOAD_MB : MAX_IMAGE_UPLOAD_MB} MB.
+              </p>
             </label>
             <label className="block">
               <span className="text-sm text-neutral-300">Thumbnail URL para video</span>
@@ -816,16 +1434,38 @@ export default function AdminPage() {
             <label className="block">
               <span className="text-sm text-neutral-300">Thumbnail archivo para video</span>
               <input
+                ref={mediaThumbnailFileInputRef}
                 type="file"
                 accept="image/*"
-                onChange={(event) =>
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] || null;
+                  const validationError = validateFileSize(selectedFile, "image");
+
+                  if (validationError) {
+                    setMediaForm((current) => ({
+                      ...current,
+                      thumbnailFile: null,
+                    }));
+                    resetInputRef(mediaThumbnailFileInputRef);
+                    setNotice(validationError, "error");
+                    return;
+                  }
+
                   setMediaForm((current) => ({
                     ...current,
-                    thumbnailFile: event.target.files?.[0] || null,
-                  }))
-                }
+                    thumbnailFile: selectedFile,
+                  }));
+                }}
                 className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
               />
+              <p className="mt-2 text-xs text-neutral-500">
+                {mediaForm.thumbnailFile
+                  ? `Archivo seleccionado: ${mediaForm.thumbnailFile.name}`
+                  : "Ningun archivo seleccionado"}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
+              </p>
             </label>
             <label className="block">
               <span className="text-sm text-neutral-300">Titulo</span>
@@ -838,14 +1478,29 @@ export default function AdminPage() {
                 placeholder="Campana primavera"
               />
             </label>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-3 rounded-full bg-white text-neutral-950 font-semibold disabled:opacity-60"
-            >
-              {saving ? "Guardando..." : "Guardar elemento"}
-            </button>
-            </form>
+             <button
+               type="submit"
+               disabled={saving}
+               className="px-4 py-3 rounded-full bg-white text-neutral-950 font-semibold disabled:opacity-60"
+             >
+               {uploadProgress?.active
+                 ? `Subiendo video... ${uploadButtonLabel}`
+                 : saving
+                   ? "Guardando..."
+                   : editingMediaId
+                     ? "Actualizar elemento"
+                     : "Guardar elemento"}
+             </button>
+             {editingMediaId ? (
+               <button
+                 type="button"
+                 onClick={resetMediaForm}
+                 className="ml-3 px-4 py-3 rounded-full border border-white/15 text-white"
+               >
+                 Cancelar edicion
+               </button>
+             ) : null}
+             </form>
 
             <div className="bg-black/10 border border-white/10 rounded-3xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-4">
@@ -887,11 +1542,18 @@ export default function AdminPage() {
                   </label>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <p className="text-sm text-neutral-300">
-                    {filteredMediaItems.length} resultado{filteredMediaItems.length === 1 ? "" : "s"} ·
-                    pagina <span className="text-white font-medium"> {mediaPage} </span>
-                    de <span className="text-white font-medium"> {totalMediaPages}</span>
-                  </p>
+                  <div>
+                    <p className="text-sm text-neutral-300">
+                      {filteredMediaItems.length} resultado{filteredMediaItems.length === 1 ? "" : "s"} ·
+                      pagina <span className="text-white font-medium"> {mediaPage} </span>
+                      de <span className="text-white font-medium"> {totalMediaPages}</span>
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {isMediaReorderDisabled
+                        ? "Limpia la busqueda y el filtro para reordenar elementos."
+                        : "Arrastra y suelta elementos para cambiar el orden de la categoria."}
+                    </p>
+                  </div>
                   <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -925,15 +1587,29 @@ export default function AdminPage() {
             ) : null}
 
             <div className="grid gap-3">
-              {paginatedMediaItems.map((item, index) => {
-                const absoluteIndex = (mediaPage - 1) * ADMIN_MEDIA_ITEMS_PER_PAGE + index;
+              {paginatedMediaItems.map((item) => {
                 const previewSrc =
                   item.type === "video"
                     ? item.thumbnail || selectedCategory?.cover || "/images/Otras.jpg"
                     : item.src;
 
                 return (
-                  <div key={item.id} className="rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <div
+                    key={item.id}
+                    draggable={!saving && !isMediaReorderDisabled}
+                    onDragStart={() => handleMediaDragStart(item.id)}
+                    onDragEnter={() => handleMediaDragEnter(item.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleMediaDrop(item.id)}
+                    onDragEnd={handleMediaDragEnd}
+                    className={`rounded-2xl border bg-black/10 p-4 transition ${
+                      draggedMediaId === item.id ? "opacity-50" : ""
+                    } ${
+                      dragOverMediaId === item.id && draggedMediaId !== item.id
+                        ? "border-sky-300 bg-sky-400/10"
+                        : "border-white/10"
+                    }`}
+                  >
                     <div className="flex flex-col sm:flex-row gap-4">
                       <div className="relative w-full sm:w-32 h-32 overflow-hidden rounded-2xl bg-neutral-950 border border-white/10 shrink-0">
                         <img
@@ -947,6 +1623,17 @@ export default function AdminPage() {
                       </div>
                       <div className="flex-1 flex flex-col justify-between gap-3">
                         <div>
+                          <div className="mb-3 flex items-center gap-2">
+                            <span
+                              className={`select-none rounded-xl border px-3 py-2 text-[10px] uppercase tracking-[0.2em] ${
+                                isMediaReorderDisabled
+                                  ? "cursor-not-allowed border-white/5 bg-white/[0.03] text-neutral-600"
+                                  : "cursor-grab border-white/10 bg-white/5 text-neutral-400"
+                              }`}
+                            >
+                              Drag
+                            </span>
+                          </div>
                           <p className="font-medium">{item.title || "Sin titulo"}</p>
                           <p className="text-sm text-neutral-400 break-all line-clamp-2">
                             {item.src}
@@ -955,19 +1642,10 @@ export default function AdminPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => moveMedia(absoluteIndex, -1)}
-                            disabled={saving}
-                            className="px-3 py-1 rounded-full border border-white/15 disabled:opacity-60"
+                            onClick={() => startEditingMedia(item)}
+                            className="px-3 py-1 rounded-full border border-white/15"
                           >
-                            Subir
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveMedia(absoluteIndex, 1)}
-                            disabled={saving}
-                            className="px-3 py-1 rounded-full border border-white/15 disabled:opacity-60"
-                          >
-                            Bajar
+                            Editar
                           </button>
                           <button
                             type="button"
@@ -1138,39 +1816,48 @@ export default function AdminPage() {
 
             <div className="bg-black/10 border border-white/10 rounded-3xl p-6 space-y-4">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-2xl font-semibold">Lista de paquetes</h2>
+              <div>
+                <h2 className="text-2xl font-semibold">Lista de paquetes</h2>
+                <p className="mt-1 text-sm text-neutral-400">
+                  Arrastra y suelta para cambiar el orden.
+                </p>
+              </div>
               <span className="text-sm text-neutral-400">{packages.length} total</span>
             </div>
             {!packages.length ? (
               <p className="text-neutral-400">Todavia no hay paquetes cargados.</p>
             ) : null}
             <div className="grid gap-3">
-              {packages.map((item, index) => (
-                <div key={item.id} className="rounded-2xl border border-white/10 bg-black/10 p-4">
+              {packages.map((item) => (
+                <div
+                  key={item.id}
+                  draggable={!saving}
+                  onDragStart={() => handlePackageDragStart(item.id)}
+                  onDragEnter={() => handlePackageDragEnter(item.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() => handlePackageDrop(item.id)}
+                  onDragEnd={handlePackageDragEnd}
+                  className={`rounded-2xl border bg-black/10 p-4 transition ${
+                    draggedPackageId === item.id ? "opacity-50" : ""
+                  } ${
+                    dragOverPackageId === item.id && draggedPackageId !== item.id
+                      ? "border-sky-300 bg-sky-400/10"
+                      : "border-white/10"
+                  }`}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
+                    <div className="flex items-center gap-3">
+                      <span className="cursor-grab select-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-neutral-400">
+                        Drag
+                      </span>
+                      <div>
                       <p className="font-medium capitalize">{item.title}</p>
                       <p className="text-sm text-neutral-400">
                         {item.theme} · {item.isFeatured ? "destacado" : "normal"}
                       </p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => movePackage(index, -1)}
-                        disabled={saving}
-                        className="px-3 py-1 rounded-full border border-white/15 disabled:opacity-60"
-                      >
-                        Subir
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => movePackage(index, 1)}
-                        disabled={saving}
-                        className="px-3 py-1 rounded-full border border-white/15 disabled:opacity-60"
-                      >
-                        Bajar
-                      </button>
                       <button
                         type="button"
                         onClick={() => startEditingPackage(item)}
@@ -1253,16 +1940,48 @@ export default function AdminPage() {
                   </label>
                 </div>
 
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Texto del segundo boton</span>
+                    <input
+                      value={homeForm.heroSecondaryCtaLabel}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          heroSecondaryCtaLabel: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      placeholder="Ver categorias"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Link del segundo boton</span>
+                    <input
+                      value={homeForm.heroSecondaryCtaHref}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          heroSecondaryCtaHref: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      placeholder="/categories"
+                    />
+                  </label>
+                </div>
+
                 <label className="block">
                   <span className="text-sm text-neutral-300">Formato del fondo</span>
                   <select
                     value={homeForm.heroMediaType}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setHomeForm((current) => ({
                         ...current,
                         heroMediaType: event.target.value,
-                      }))
-                    }
+                      }));
+                      resetHomeFileInputs();
+                    }}
                     className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
                   >
                     <option value="sequence">Secuencia de imagenes</option>
@@ -1287,11 +2006,31 @@ export default function AdminPage() {
                     <label className="block">
                       <span className="text-sm text-neutral-300">Imagen por archivo</span>
                       <input
+                        ref={heroImageFileInputRef}
                         type="file"
                         accept="image/*"
-                        onChange={(event) => setHeroImageFile(event.target.files?.[0] || null)}
+                        onChange={(event) => {
+                          const selectedFile = event.target.files?.[0] || null;
+                          const isValid = handleValidatedSingleFile({
+                            file: selectedFile,
+                            type: "image",
+                            setter: setHeroImageFile,
+                          });
+
+                          if (!isValid) {
+                            resetInputRef(heroImageFileInputRef);
+                          }
+                        }}
                         className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
                       />
+                      <p className="mt-2 text-xs text-neutral-500">
+                        {heroImageFile
+                          ? `Archivo seleccionado: ${heroImageFile.name}`
+                          : "Ningun archivo seleccionado"}
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-600">
+                        Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
+                      </p>
                     </label>
                   </>
                 ) : null}
@@ -1319,14 +2058,30 @@ export default function AdminPage() {
                         Subir varias imagenes
                       </span>
                       <input
+                        ref={heroSequenceFileInputRef}
                         type="file"
                         accept="image/*"
                         multiple
-                        onChange={(event) =>
-                          setHeroSequenceFiles(Array.from(event.target.files || []))
-                        }
+                        onChange={(event) => {
+                          const selectedFiles = Array.from(event.target.files || []);
+                          const isValid = handleValidatedMultiFile({
+                            files: selectedFiles,
+                            type: "image",
+                            setter: setHeroSequenceFiles,
+                          });
+
+                          if (!isValid) {
+                            resetInputRef(heroSequenceFileInputRef);
+                          }
+                        }}
                         className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
                       />
+                      <p className="mt-2 text-xs text-neutral-500">
+                        {formatSelectedFiles(heroSequenceFiles)}
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-600">
+                        Maximo recomendado por imagen: {MAX_IMAGE_UPLOAD_MB} MB.
+                      </p>
                     </label>
                   </>
                 ) : null}
@@ -1347,11 +2102,31 @@ export default function AdminPage() {
                     <label className="block">
                       <span className="text-sm text-neutral-300">Video por archivo</span>
                       <input
+                        ref={heroVideoFileInputRef}
                         type="file"
                         accept="video/*"
-                        onChange={(event) => setHeroVideoFile(event.target.files?.[0] || null)}
+                        onChange={(event) => {
+                          const selectedFile = event.target.files?.[0] || null;
+                          const isValid = handleValidatedSingleFile({
+                            file: selectedFile,
+                            type: "video",
+                            setter: setHeroVideoFile,
+                          });
+
+                          if (!isValid) {
+                            resetInputRef(heroVideoFileInputRef);
+                          }
+                        }}
                         className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
                       />
+                      <p className="mt-2 text-xs text-neutral-500">
+                        {heroVideoFile
+                          ? `Archivo seleccionado: ${heroVideoFile.name}`
+                          : "Ningun archivo seleccionado"}
+                      </p>
+                      <p className="mt-1 text-xs text-neutral-600">
+                        Maximo recomendado: {MAX_VIDEO_UPLOAD_MB} MB.
+                      </p>
                     </label>
                   </>
                 ) : null}
@@ -1362,95 +2137,145 @@ export default function AdminPage() {
                 </p>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
-                    Bloque parallax
+              <div className="space-y-6">
+                <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+                      Seccion categorias
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold">Titulo del carrusel</h3>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Titulo principal</span>
+                    <textarea
+                      value={homeForm.categoriesTitle}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          categoriesTitle: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full min-h-28 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      placeholder="Explora el trabajo por linea visual"
+                    />
+                  </label>
+
+                  <p className="text-xs leading-6 text-neutral-500">
+                    Este texto aparece arriba del carrusel de categorias en el home.
                   </p>
-                  <h3 className="mt-2 text-xl font-semibold">Captura momentos inolvidables</h3>
                 </div>
 
-                <label className="block">
-                  <span className="text-sm text-neutral-300">Titulo</span>
-                  <input
-                    value={homeForm.parallaxTitle}
-                    onChange={(event) =>
-                      setHomeForm((current) => ({
-                        ...current,
-                        parallaxTitle: event.target.value,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
-                  />
-                </label>
+                <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+                      Bloque parallax
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold">Captura momentos inolvidables</h3>
+                  </div>
 
-                <label className="block">
-                  <span className="text-sm text-neutral-300">Descripcion</span>
-                  <textarea
-                    value={homeForm.parallaxIntro}
-                    onChange={(event) =>
-                      setHomeForm((current) => ({
-                        ...current,
-                        parallaxIntro: event.target.value,
-                      }))
-                    }
-                    className="mt-2 w-full min-h-32 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
-                  />
-                </label>
-
-                <div className="grid gap-4 md:grid-cols-2">
                   <label className="block">
-                    <span className="text-sm text-neutral-300">Texto del boton</span>
+                    <span className="text-sm text-neutral-300">Titulo</span>
                     <input
-                      value={homeForm.parallaxCtaLabel}
+                      value={homeForm.parallaxTitle}
                       onChange={(event) =>
                         setHomeForm((current) => ({
                           ...current,
-                          parallaxCtaLabel: event.target.value,
+                          parallaxTitle: event.target.value,
                         }))
                       }
                       className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
                     />
                   </label>
+
                   <label className="block">
-                    <span className="text-sm text-neutral-300">Link del boton</span>
-                    <input
-                      value={homeForm.parallaxCtaHref}
+                    <span className="text-sm text-neutral-300">Descripcion</span>
+                    <textarea
+                      value={homeForm.parallaxIntro}
                       onChange={(event) =>
                         setHomeForm((current) => ({
                           ...current,
-                          parallaxCtaHref: event.target.value,
+                          parallaxIntro: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full min-h-32 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                  </label>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="text-sm text-neutral-300">Texto del boton</span>
+                      <input
+                        value={homeForm.parallaxCtaLabel}
+                        onChange={(event) =>
+                          setHomeForm((current) => ({
+                            ...current,
+                            parallaxCtaLabel: event.target.value,
+                          }))
+                        }
+                        className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-sm text-neutral-300">Link del boton</span>
+                      <input
+                        value={homeForm.parallaxCtaHref}
+                        onChange={(event) =>
+                          setHomeForm((current) => ({
+                            ...current,
+                            parallaxCtaHref: event.target.value,
+                          }))
+                        }
+                        className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Imagen por URL</span>
+                    <input
+                      value={homeForm.parallaxImage}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          parallaxImage: event.target.value,
                         }))
                       }
                       className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      placeholder="https://... o /images/..."
                     />
                   </label>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Imagen por archivo</span>
+                    <input
+                      ref={parallaxImageFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={(event) => {
+                        const selectedFile = event.target.files?.[0] || null;
+                        const isValid = handleValidatedSingleFile({
+                          file: selectedFile,
+                          type: "image",
+                          setter: setParallaxImageFile,
+                        });
+
+                        if (!isValid) {
+                          resetInputRef(parallaxImageFileInputRef);
+                        }
+                      }}
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                    <p className="mt-2 text-xs text-neutral-500">
+                      {parallaxImageFile
+                        ? `Archivo seleccionado: ${parallaxImageFile.name}`
+                        : "Ningun archivo seleccionado"}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
+                    </p>
+                  </label>
                 </div>
-
-                <label className="block">
-                  <span className="text-sm text-neutral-300">Imagen por URL</span>
-                  <input
-                    value={homeForm.parallaxImage}
-                    onChange={(event) =>
-                      setHomeForm((current) => ({
-                        ...current,
-                        parallaxImage: event.target.value,
-                      }))
-                    }
-                    className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
-                    placeholder="https://... o /images/..."
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-sm text-neutral-300">Imagen por archivo</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => setParallaxImageFile(event.target.files?.[0] || null)}
-                    className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
-                  />
-                </label>
               </div>
             </div>
 
@@ -1459,7 +2284,11 @@ export default function AdminPage() {
               disabled={saving}
               className="px-4 py-3 rounded-full bg-amber-300 text-neutral-950 font-semibold disabled:opacity-60"
             >
-              Guardar home
+              {uploadProgress?.active
+                ? `Subiendo video... ${uploadButtonLabel}`
+                : saving
+                  ? "Guardando..."
+                  : "Guardar home"}
             </button>
           </form>
 

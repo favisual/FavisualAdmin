@@ -127,10 +127,15 @@ const defaultGalleryStore = {
       title: "Agenda tu sesion de contenido",
       ctaLabel: "Ahora",
       ctaHref: "/contacto",
+      secondaryCtaLabel: "Ver categorias",
+      secondaryCtaHref: "/categories",
       mediaType: "sequence",
       image: "/images/hero-bg01.webp",
       images: ["/images/hero-bg01.webp", "/images/hero-bg02.webp"],
       video: "",
+    },
+    categories: {
+      title: "Explora el trabajo por linea visual",
     },
     parallax: {
       title: "Captura momentos inolvidables",
@@ -183,6 +188,7 @@ function normalizePackage(item, index) {
 function normalizeHomeSettings(homeSettings) {
   const defaults = fallbackClone().homeSettings;
   const hero = homeSettings?.hero || {};
+  const categories = homeSettings?.categories || {};
   const parallax = homeSettings?.parallax || {};
   const normalizedImages = Array.isArray(hero.images)
     ? hero.images.map((item) => item?.trim()).filter(Boolean)
@@ -193,12 +199,17 @@ function normalizeHomeSettings(homeSettings) {
       title: hero.title || defaults.hero.title,
       ctaLabel: hero.ctaLabel || defaults.hero.ctaLabel,
       ctaHref: hero.ctaHref || defaults.hero.ctaHref,
+      secondaryCtaLabel: hero.secondaryCtaLabel || defaults.hero.secondaryCtaLabel,
+      secondaryCtaHref: hero.secondaryCtaHref || defaults.hero.secondaryCtaHref,
       mediaType: ["image", "sequence", "video"].includes(hero.mediaType)
         ? hero.mediaType
         : defaults.hero.mediaType,
       image: hero.image || defaults.hero.image,
       images: normalizedImages.length ? normalizedImages : defaults.hero.images,
       video: hero.video || "",
+    },
+    categories: {
+      title: categories.title || defaults.categories.title,
     },
     parallax: {
       title: parallax.title || defaults.parallax.title,

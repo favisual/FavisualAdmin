@@ -31,6 +31,9 @@ function Hero() {
         setIndex(0);
     }, [mediaType, hero?.image, hero?.video, images.length]);
 
+    const secondaryCtaLabel = hero?.secondaryCtaLabel?.trim();
+    const secondaryCtaHref = hero?.secondaryCtaHref?.trim();
+
     return (
         <>
             <div className="relative h-screen overflow-hidden -mt-36 lg:-mt-34">
@@ -69,16 +72,27 @@ function Hero() {
                                 <p className="text-3xl leading-tight sm:text-4xl lg:text-5xl">
                                     {hero?.title || "Agenda tu sesion de contenido"}
                                 </p>
-                                <a
-                                    href={hero?.ctaHref || "/contacto"}
-                                    className="group relative inline-flex w-fit items-center gap-2.5 self-start overflow-hidden rounded-full border border-amber-200/40 bg-[linear-gradient(135deg,rgba(255,248,235,0.96),rgba(245,196,108,0.92))] px-6 py-2.5 text-base font-semibold text-neutral-950 shadow-[0_18px_45px_rgba(191,134,37,0.28)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(191,134,37,0.36)] sm:gap-3 sm:px-8 sm:py-3 sm:text-xl"
-                                >
-                                    <span className="absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.45),transparent)] translate-x-[-120%] transition duration-700 group-hover:translate-x-[120%]" />
-                                    <span className="relative">{hero?.ctaLabel || "Ahora"}</span>
-                                    <span className="relative text-base transition-transform duration-300 group-hover:translate-x-1 sm:text-lg">
-                                        →
-                                    </span>
-                                </a>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <a
+                                        href={hero?.ctaHref || "/contacto"}
+                                        className="group relative inline-flex w-fit items-center gap-2.5 self-start overflow-hidden rounded-full border border-amber-200/40 bg-[linear-gradient(135deg,rgba(255,248,235,0.96),rgba(245,196,108,0.92))] px-6 py-2.5 text-base font-semibold text-neutral-950 shadow-[0_18px_45px_rgba(191,134,37,0.28)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_55px_rgba(191,134,37,0.36)] sm:gap-3 sm:px-8 sm:py-3 sm:text-xl"
+                                    >
+                                        <span className="absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.45),transparent)] translate-x-[-120%] transition duration-700 group-hover:translate-x-[120%]" />
+                                        <span className="relative">{hero?.ctaLabel || "Ahora"}</span>
+                                        <span className="relative text-base transition-transform duration-300 group-hover:translate-x-1 sm:text-lg">
+                                            →
+                                        </span>
+                                    </a>
+                                    {secondaryCtaLabel && secondaryCtaHref ? (
+                                        <a
+                                            href={secondaryCtaHref}
+                                            className="inline-flex w-fit items-center gap-2 self-start rounded-full border border-white/20 bg-black/20 px-6 py-2.5 text-base font-semibold text-white backdrop-blur-md transition duration-300 hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/10 sm:px-8 sm:py-3 sm:text-lg"
+                                        >
+                                            <span>{secondaryCtaLabel}</span>
+                                            <span className="text-sm text-white/75">+</span>
+                                        </a>
+                                    ) : null}
+                                </div>
                             </>
                         ) : null}
                     </div>

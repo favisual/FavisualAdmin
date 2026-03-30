@@ -10,8 +10,10 @@ import "swiper/css/pagination";
 import { useGallery } from "../context/GalleryContext";
 
 function CardsCategories() {
-  const { categories } = useGallery();
+  const { categories, homeSettings } = useGallery();
   const [activeIndex, setActiveIndex] = useState(0);
+  const sectionTitle =
+    homeSettings?.categories?.title?.trim() || "Explora el trabajo por linea visual";
   const canLoop = categories.length > 4;
   const progressPercentage = useMemo(() => {
     if (categories.length <= 1) {
@@ -34,7 +36,7 @@ function CardsCategories() {
               Categorias
             </p>
             <h2 className="text-3xl md:text-5xl font-semibold text-white max-w-2xl">
-              Explora el trabajo por linea visual
+              {sectionTitle}
             </h2>
             <p className="mt-4 max-w-xl text-neutral-400">
               Desliza, usa las flechas o deja que el carrusel avance para descubrir mas categorias.
