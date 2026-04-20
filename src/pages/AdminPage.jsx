@@ -28,13 +28,15 @@ const emptyPackageForm = {
   featuresText: "",
   priceIndividual: "",
   pricePlan: "",
-  priceUnico: "",
+  pricePlanLabel: "Precio plan mensual",
+  pricePlanNote: "Ideal para marcas que quieren mantener una imagen constante y profesional.",
   buttonText: "Comencemos",
 };
 
 const emptyContactForm = {
   title: "",
   intro: "",
+  photoUrl: "",
   email: "",
   phone: "",
   whatsapp: "",
@@ -54,11 +56,18 @@ const emptyHomeForm = {
   heroImagesText: "",
   heroVideo: "",
   categoriesTitle: "",
+  brandLogosTitle: "",
+  brandLogosIntro: "",
+  brandLogosText: "",
   parallaxTitle: "",
   parallaxIntro: "",
   parallaxCtaLabel: "Reserva tu sesion",
   parallaxCtaHref: "/contacto",
   parallaxImage: "",
+  packageCtaTitle: "",
+  packageCtaIntro: "",
+  packageCtaLabel: "Quiero mi paquete",
+  packageCtaHref: "/contacto",
 };
 
 const ADMIN_MEDIA_ITEMS_PER_PAGE = 6;
@@ -245,9 +254,11 @@ export default function AdminPage() {
   const [uploadingLabel, setUploadingLabel] = useState("");
   const [visibleLoaderText, setVisibleLoaderText] = useState("");
   const [coverFile, setCoverFile] = useState(null);
+  const [contactPhotoFile, setContactPhotoFile] = useState(null);
   const [heroImageFile, setHeroImageFile] = useState(null);
   const [heroSequenceFiles, setHeroSequenceFiles] = useState([]);
   const [heroVideoFile, setHeroVideoFile] = useState(null);
+  const [brandLogoFiles, setBrandLogoFiles] = useState([]);
   const [parallaxImageFile, setParallaxImageFile] = useState(null);
   const [signingOut, setSigningOut] = useState(false);
   const [mediaPage, setMediaPage] = useState(1);
@@ -260,11 +271,13 @@ export default function AdminPage() {
   const [draggedPackageId, setDraggedPackageId] = useState("");
   const [dragOverPackageId, setDragOverPackageId] = useState("");
   const coverFileInputRef = useRef(null);
+  const contactPhotoFileInputRef = useRef(null);
   const mediaFileInputRef = useRef(null);
   const mediaThumbnailFileInputRef = useRef(null);
   const heroImageFileInputRef = useRef(null);
   const heroSequenceFileInputRef = useRef(null);
   const heroVideoFileInputRef = useRef(null);
+  const brandLogoFileInputRef = useRef(null);
   const parallaxImageFileInputRef = useRef(null);
   const loaderShownAtRef = useRef(0);
   const loaderHideTimeoutRef = useRef(null);
@@ -329,6 +342,7 @@ export default function AdminPage() {
     setContactForm({
       title: contact?.title || "",
       intro: contact?.intro || "",
+      photoUrl: contact?.photoUrl || "",
       email: contact?.email || "",
       phone: contact?.phone || "",
       whatsapp: contact?.whatsapp || "",
@@ -352,11 +366,23 @@ export default function AdminPage() {
       heroVideo: homeSettings?.hero?.video || "",
       categoriesTitle:
         homeSettings?.categories?.title || "Explora el trabajo por linea visual",
+      brandLogosTitle:
+        homeSettings?.brandLogos?.title || "Marcas con las que he trabajado",
+      brandLogosIntro:
+        homeSettings?.brandLogos?.intro ||
+        "Logos de marcas, clientes o proyectos que puedes destacar como referencia visual.",
+      brandLogosText: (homeSettings?.brandLogos?.logos || []).join("\n"),
       parallaxTitle: homeSettings?.parallax?.title || "",
       parallaxIntro: homeSettings?.parallax?.intro || "",
       parallaxCtaLabel: homeSettings?.parallax?.ctaLabel || "Reserva tu sesion",
       parallaxCtaHref: homeSettings?.parallax?.ctaHref || "/contacto",
       parallaxImage: homeSettings?.parallax?.image || "",
+      packageCtaTitle: homeSettings?.packageCta?.title || "Arma tu paquete conmigo",
+      packageCtaIntro:
+        homeSettings?.packageCta?.intro ||
+        "Creamos una propuesta visual a tu medida para que tu marca mantenga una imagen clara, elegante y coherente.",
+      packageCtaLabel: homeSettings?.packageCta?.ctaLabel || "Quiero mi paquete",
+      packageCtaHref: homeSettings?.packageCta?.ctaHref || "/contacto",
     });
   }, [homeSettings]);
 
@@ -396,14 +422,24 @@ export default function AdminPage() {
     resetInputRef(mediaThumbnailFileInputRef);
   };
 
+  const resetContactPhotoInput = () => {
+    setContactPhotoFile(null);
+
+    if (contactPhotoFileInputRef.current) {
+      contactPhotoFileInputRef.current.value = "";
+    }
+  };
+
   const resetHomeFileInputs = () => {
     setHeroImageFile(null);
     setHeroSequenceFiles([]);
     setHeroVideoFile(null);
+    setBrandLogoFiles([]);
     setParallaxImageFile(null);
     resetInputRef(heroImageFileInputRef);
     resetInputRef(heroSequenceFileInputRef);
     resetInputRef(heroVideoFileInputRef);
+    resetInputRef(brandLogoFileInputRef);
     resetInputRef(parallaxImageFileInputRef);
   };
 
@@ -877,7 +913,10 @@ export default function AdminPage() {
         .filter(Boolean),
       priceIndividual: packageForm.priceIndividual.trim(),
       pricePlan: packageForm.pricePlan.trim(),
-      priceUnico: packageForm.priceUnico.trim(),
+      pricePlanLabel: packageForm.pricePlanLabel.trim() || "Precio plan mensual",
+      pricePlanNote:
+        packageForm.pricePlanNote.trim() ||
+        "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       buttonText: packageForm.buttonText.trim() || "Comencemos",
     };
 
@@ -913,7 +952,10 @@ export default function AdminPage() {
       featuresText: item.features.join("\n"),
       priceIndividual: item.priceIndividual,
       pricePlan: item.pricePlan,
-      priceUnico: item.priceUnico,
+      pricePlanLabel: item.pricePlanLabel || "Precio plan mensual",
+      pricePlanNote:
+        item.pricePlanNote ||
+        "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       buttonText: item.buttonText || "Comencemos",
     });
   };
@@ -945,15 +987,18 @@ export default function AdminPage() {
       await updateContact({
         title: contactForm.title.trim(),
         intro: contactForm.intro.trim(),
+        photoUrl: contactForm.photoUrl.trim(),
         email: contactForm.email.trim(),
         phone: contactForm.phone.trim(),
         whatsapp: normalizedWhatsApp,
         instagram: contactForm.instagram.trim(),
         facebook: contactForm.facebook.trim(),
         ctaLabel: contactForm.ctaLabel.trim() || "Escribenos",
+        contactPhotoFile,
         homeSettings,
       });
       setContactForm((current) => ({ ...current, whatsapp: normalizedWhatsApp }));
+      resetContactPhotoInput();
       setNotice("Contacto actualizado.");
     } catch (contactError) {
       setNotice(contactError.message || "No se pudo actualizar el contacto.", "error");
@@ -969,10 +1014,18 @@ export default function AdminPage() {
       .split("\n")
       .map((item) => item.trim())
       .filter(Boolean);
+    const brandLogoUrls = homeForm.brandLogosText
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
 
     try {
       setUploadingLabel(
-        heroImageFile || heroSequenceFiles.length || heroVideoFile || parallaxImageFile
+        heroImageFile ||
+          heroSequenceFiles.length ||
+          heroVideoFile ||
+          brandLogoFiles.length ||
+          parallaxImageFile
           ? "Subiendo archivos del home..."
           : "Guardando home..."
       );
@@ -992,6 +1045,13 @@ export default function AdminPage() {
           title:
             homeForm.categoriesTitle.trim() || "Explora el trabajo por linea visual",
         },
+        brandLogos: {
+          title: homeForm.brandLogosTitle.trim() || "Marcas con las que he trabajado",
+          intro:
+            homeForm.brandLogosIntro.trim() ||
+            "Logos de marcas, clientes o proyectos que puedes destacar como referencia visual.",
+          logos: brandLogoUrls,
+        },
         parallax: {
           title: homeForm.parallaxTitle.trim() || "Captura momentos inolvidables",
           intro:
@@ -1001,9 +1061,18 @@ export default function AdminPage() {
           ctaHref: homeForm.parallaxCtaHref.trim() || "/contacto",
           image: homeForm.parallaxImage.trim(),
         },
+        packageCta: {
+          title: homeForm.packageCtaTitle.trim() || "Arma tu paquete conmigo",
+          intro:
+            homeForm.packageCtaIntro.trim() ||
+            "Creamos una propuesta visual a tu medida para que tu marca mantenga una imagen clara, elegante y coherente.",
+          ctaLabel: homeForm.packageCtaLabel.trim() || "Quiero mi paquete",
+          ctaHref: homeForm.packageCtaHref.trim() || "/contacto",
+        },
         heroImageFile,
         heroSequenceFiles,
         heroVideoFile,
+        brandLogoFiles,
         parallaxImageFile,
       });
 
@@ -1817,7 +1886,7 @@ export default function AdminPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm text-neutral-300">Precio plan</span>
+              <span className="text-sm text-neutral-300">Precio plan mensual</span>
               <input
                 value={packageForm.pricePlan}
                 onChange={(event) =>
@@ -1827,13 +1896,25 @@ export default function AdminPage() {
               />
             </label>
             <label className="block">
-              <span className="text-sm text-neutral-300">Precio unico</span>
+              <span className="text-sm text-neutral-300">Etiqueta del plan mensual</span>
               <input
-                value={packageForm.priceUnico}
+                value={packageForm.pricePlanLabel}
                 onChange={(event) =>
-                  setPackageForm((current) => ({ ...current, priceUnico: event.target.value }))
+                  setPackageForm((current) => ({ ...current, pricePlanLabel: event.target.value }))
                 }
                 className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                placeholder="Precio plan mensual"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-neutral-300">Descripcion del plan mensual</span>
+              <textarea
+                value={packageForm.pricePlanNote}
+                onChange={(event) =>
+                  setPackageForm((current) => ({ ...current, pricePlanNote: event.target.value }))
+                }
+                className="mt-2 w-full min-h-28 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                placeholder="Ideal para marcas que quieren mantener una imagen constante y profesional."
               />
             </label>
             <label className="block">
@@ -2210,6 +2291,93 @@ export default function AdminPage() {
                 <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+                      Marcas trabajadas
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold">Bloque de logos</h3>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Titulo</span>
+                    <input
+                      value={homeForm.brandLogosTitle}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          brandLogosTitle: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Descripcion</span>
+                    <textarea
+                      value={homeForm.brandLogosIntro}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          brandLogosIntro: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full min-h-28 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">
+                      URLs de logos, uno por linea
+                    </span>
+                    <textarea
+                      value={homeForm.brandLogosText}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          brandLogosText: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full min-h-32 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      placeholder={"https://.../logo-1.png\nhttps://.../logo-2.png"}
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Subir logos por archivo</span>
+                    <input
+                      ref={brandLogoFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(event) => {
+                        const selectedFiles = Array.from(event.target.files || []);
+                        const isValid = handleValidatedMultiFile({
+                          files: selectedFiles,
+                          type: "image",
+                          setter: setBrandLogoFiles,
+                        });
+
+                        if (!isValid) {
+                          resetInputRef(brandLogoFileInputRef);
+                        }
+                      }}
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                    <p className="mt-2 text-xs text-neutral-500">
+                      {formatSelectedFiles(brandLogoFiles)}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      Maximo recomendado por logo: {MAX_IMAGE_UPLOAD_MB} MB.
+                    </p>
+                  </label>
+
+                  <p className="text-xs leading-6 text-neutral-500">
+                    Usa logos claros y horizontales para que la galeria se vea limpia y uniforme.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
                       Bloque parallax
                     </p>
                     <h3 className="mt-2 text-xl font-semibold">Captura momentos inolvidables</h3>
@@ -2312,10 +2480,82 @@ export default function AdminPage() {
                         ? `Archivo seleccionado: ${parallaxImageFile.name}`
                         : "Ningun archivo seleccionado"}
                     </p>
-                    <p className="mt-1 text-xs text-neutral-600">
+                  <p className="mt-1 text-xs text-neutral-600">
                       Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
                     </p>
                   </label>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-black/10 p-5 space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-neutral-500">
+                      CTA final
+                    </p>
+                    <h3 className="mt-2 text-xl font-semibold">Arma tu paquete conmigo</h3>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Titulo</span>
+                    <input
+                      value={homeForm.packageCtaTitle}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          packageCtaTitle: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-sm text-neutral-300">Descripcion</span>
+                    <textarea
+                      value={homeForm.packageCtaIntro}
+                      onChange={(event) =>
+                        setHomeForm((current) => ({
+                          ...current,
+                          packageCtaIntro: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full min-h-32 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                    />
+                  </label>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="text-sm text-neutral-300">Texto del boton</span>
+                      <input
+                        value={homeForm.packageCtaLabel}
+                        onChange={(event) =>
+                          setHomeForm((current) => ({
+                            ...current,
+                            packageCtaLabel: event.target.value,
+                          }))
+                        }
+                        className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-sm text-neutral-300">Link del boton</span>
+                      <input
+                        value={homeForm.packageCtaHref}
+                        onChange={(event) =>
+                          setHomeForm((current) => ({
+                            ...current,
+                            packageCtaHref: event.target.value,
+                          }))
+                        }
+                        className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                        placeholder="/contacto"
+                      />
+                    </label>
+                  </div>
+
+                  <p className="text-xs leading-6 text-neutral-500">
+                    Este bloque se muestra al final del home para cerrar la pagina con una llamada
+                    a la accion clara.
+                  </p>
                 </div>
               </div>
             </div>
@@ -2358,6 +2598,46 @@ export default function AdminPage() {
                 }
                 className="mt-2 w-full min-h-28 rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
               />
+            </label>
+            <label className="block">
+              <span className="text-sm text-neutral-300">Foto de contacto por URL</span>
+              <input
+                value={contactForm.photoUrl}
+                onChange={(event) =>
+                  setContactForm((current) => ({ ...current, photoUrl: event.target.value }))
+                }
+                className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+                placeholder="https://... o /images/..."
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-neutral-300">Foto de contacto por archivo</span>
+              <input
+                ref={contactPhotoFileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const selectedFile = event.target.files?.[0] || null;
+                  const isValid = handleValidatedSingleFile({
+                    file: selectedFile,
+                    type: "image",
+                    setter: setContactPhotoFile,
+                  });
+
+                  if (!isValid) {
+                    resetInputRef(contactPhotoFileInputRef);
+                  }
+                }}
+                className="mt-2 w-full rounded-2xl bg-neutral-950 border border-white/10 px-4 py-3"
+              />
+              <p className="mt-2 text-xs text-neutral-500">
+                {contactPhotoFile
+                  ? `Archivo seleccionado: ${contactPhotoFile.name}`
+                  : "Ningun archivo seleccionado"}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                Maximo recomendado: {MAX_IMAGE_UPLOAD_MB} MB.
+              </p>
             </label>
             <label className="block">
               <span className="text-sm text-neutral-300">Correo</span>
@@ -2467,9 +2747,18 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  <h3 className="mt-8 text-3xl font-semibold leading-tight text-white">
-                    {contactForm.title || "Contacto"}
-                  </h3>
+                  <div className="mt-8 flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="h-16 w-16 shrink-0 rounded-full border border-white/15 bg-white/5 p-1 shadow-[0_16px_36px_rgba(0,0,0,0.28)]">
+                      <img
+                        src={contactForm.photoUrl || "/FaVisual.svg"}
+                        alt={contactForm.title || "Contacto"}
+                        className="h-full w-full rounded-full object-cover"
+                      />
+                    </div>
+                    <h3 className="text-3xl font-semibold leading-tight text-white">
+                      {contactForm.title || "Contacto"}
+                    </h3>
+                  </div>
                   <p className="mt-4 max-w-xl text-sm leading-7 text-neutral-300">
                     {contactForm.intro || "Agrega una descripcion para esta seccion."}
                   </p>

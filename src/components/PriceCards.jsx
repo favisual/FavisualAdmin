@@ -51,8 +51,7 @@ function buildWhatsAppHref(baseUrl, card) {
 
   const message = [
     `Hola, me interesa el paquete ${card.title}.`,
-    card.pricePlan ? `Precio final: ${card.pricePlan}.` : "",
-    card.priceUnico ? `Precio unico: ${card.priceUnico}.` : "",
+    card.pricePlan ? `${card.pricePlanLabel || "Precio plan mensual"}: ${card.pricePlan}.` : "",
     "Quiero mas informacion.",
   ]
     .filter(Boolean)
@@ -153,7 +152,9 @@ function PackageCard({ card, whatsappUrl, desktop = false }) {
               : "border-white/10 bg-black/25"
           }`}
         >
-          <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">Precio final</p>
+          <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">
+            {card.pricePlanLabel || "Precio plan mensual"}
+          </p>
           <p
             className={`mt-3 text-3xl font-semibold leading-none md:text-[2.5rem] ${
               isFeatured
@@ -164,23 +165,16 @@ function PackageCard({ card, whatsappUrl, desktop = false }) {
             {card.pricePlan || "A convenir"}
           </p>
           <p className="mt-3 max-w-[14rem] text-sm text-white/60">
-            Ideal para marcas que quieren mantener una imagen constante y profesional.
+            {card.pricePlanNote ||
+              "Ideal para marcas que quieren mantener una imagen constante y profesional."}
           </p>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-            <p className="text-[11px] uppercase tracking-[0.28em] text-white/45">
-              Precio individual
-            </p>
-            <p className="mt-2 text-lg font-medium">{card.priceIndividual || "A convenir"}</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-            <p className="text-[11px] uppercase tracking-[0.28em] text-white/45">
-              Precio unico
-            </p>
-            <p className="mt-2 text-lg font-medium">{card.priceUnico || "A convenir"}</p>
-          </div>
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+          <p className="text-[11px] uppercase tracking-[0.28em] text-white/45">
+            Precio individual
+          </p>
+          <p className="mt-2 text-lg font-medium">{card.priceIndividual || "A convenir"}</p>
         </div>
 
         <div className="mt-6 flex-1 rounded-[1.6rem] border border-white/10 bg-black/20 px-5 py-5">
@@ -240,9 +234,7 @@ export default function PriceCards() {
         <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
           <div className="max-w-3xl">
             <p className="text-xs uppercase tracking-[0.4em] text-white/45">Paquetes</p>
-            <h2 className="mt-4 text-4xl font-semibold leading-tight md:text-5xl">
-              Elige la propuesta visual que mejor se adapte a tu marca y a tu ritmo de contenido.
-            </h2>
+            <h2 className="mt-4 text-4xl font-semibold leading-tight md:text-5xl"></h2>
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/62">
               Cada paquete esta pensado para ayudarte a mostrar tu producto, servicio o proyecto
               con una imagen mas cuidada, coherente y lista para vender mejor.
@@ -255,7 +247,7 @@ export default function PriceCards() {
               <div>
                 <p className="text-2xl font-semibold capitalize">{featuredPackage?.title}</p>
                 <p className="mt-2 text-sm text-white/60">
-                  {featuredPackage?.pricePlan || featuredPackage?.priceUnico || "Precio a convenir"}
+                  {featuredPackage?.pricePlan || featuredPackage?.priceIndividual || "Precio a convenir"}
                 </p>
               </div>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.3em] text-white/70">

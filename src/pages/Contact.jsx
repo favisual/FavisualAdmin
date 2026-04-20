@@ -52,6 +52,7 @@ function SocialPill({ href, icon, label, iconClassName = "text-white" }) {
 function Contact() {
   const { contact } = useGallery();
   const whatsappLabel = contact?.ctaLabel || "Escribenos por WhatsApp";
+  const contactPhotoUrl = contact?.photoUrl || "/FaVisual.svg";
   const socialCards = [
     {
       href: contact?.instagram,
@@ -101,9 +102,18 @@ function Contact() {
                 </div>
               </div>
 
-              <h1 className="max-w-2xl break-words text-[2rem] sm:text-4xl md:text-6xl leading-[1.08] md:leading-[0.95] font-semibold tracking-[-0.03em] sm:tracking-[-0.04em]">
-                {contact?.title || "Contacto"}
-              </h1>
+              <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row sm:items-center gap-5">
+                <div className="h-20 w-20 sm:h-24 sm:w-24 shrink-0 rounded-full border border-white/15 bg-white/5 p-1 shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+                  <img
+                    src={contactPhotoUrl}
+                    alt={contact?.title || "Contacto"}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                </div>
+                <h1 className="max-w-2xl break-words text-[2rem] sm:text-4xl md:text-6xl leading-[1.08] md:leading-[0.95] font-semibold tracking-[-0.03em] sm:tracking-[-0.04em]">
+                  {contact?.title || "Contacto"}
+                </h1>
+              </div>
               <p className="mt-5 sm:mt-6 max-w-2xl break-words text-sm sm:text-base md:text-lg leading-7 sm:leading-8 text-neutral-300">
                 {contact?.intro ||
                   "Hablemos de tu siguiente produccion visual, contenidos para redes o propuesta comercial."}

@@ -19,8 +19,10 @@ function sortByOrder(items) {
   return [...items].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 }
 
-const CONTACT_SETTINGS_BASE_SELECT =
+const CONTACT_SETTINGS_LEGACY_SELECT =
   "id, title, intro, email, phone, whatsapp, instagram, facebook, cta_label";
+const CONTACT_SETTINGS_BASE_SELECT =
+  "id, title, intro, photo_url, email, phone, whatsapp, instagram, facebook, cta_label";
 const CONTACT_SETTINGS_HOME_SELECT = [
   "hero_title",
   "hero_cta_label",
@@ -32,16 +34,36 @@ const CONTACT_SETTINGS_HOME_SELECT = [
   "hero_image_urls",
   "hero_video_url",
   "home_categories_title",
+  "brand_logos_title",
+  "brand_logos_intro",
+  "brand_logos_urls",
   "home_parallax_title",
   "home_parallax_intro",
   "home_parallax_cta_label",
   "home_parallax_cta_href",
   "home_parallax_image_url",
+  "package_cta_title",
+  "package_cta_intro",
+  "package_cta_cta_label",
+  "package_cta_cta_href",
 ].join(", ");
 const CONTACT_SETTINGS_NEW_HOME_FIELDS = [
   "hero_secondary_cta_label",
   "hero_secondary_cta_href",
   "home_categories_title",
+  "photo_url",
+  "brand_logos_title",
+  "brand_logos_intro",
+  "brand_logos_urls",
+  "home_parallax_title",
+  "home_parallax_intro",
+  "home_parallax_cta_label",
+  "home_parallax_cta_href",
+  "home_parallax_image_url",
+  "package_cta_title",
+  "package_cta_intro",
+  "package_cta_cta_label",
+  "package_cta_cta_href",
 ];
 
 function stripUnsupportedContactFields(fields) {
@@ -86,6 +108,10 @@ function mapSupabaseStore(categoriesRows, mediaRows, packageRows, contactRow) {
       features: item.features || [],
       priceIndividual: item.price_individual || "",
       pricePlan: item.price_plan || "",
+      pricePlanLabel: item.price_plan_label || "Precio plan mensual",
+      pricePlanNote:
+        item.price_plan_note ||
+        "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       priceUnico: item.price_unico || "",
       buttonText: item.button_text || "Comencemos",
       sortOrder: item.sort_order ?? 0,
@@ -93,6 +119,7 @@ function mapSupabaseStore(categoriesRows, mediaRows, packageRows, contactRow) {
     contact: {
       title: contactRow?.title || "Contacto",
       intro: contactRow?.intro || "",
+      photoUrl: contactRow?.photo_url || "",
       email: contactRow?.email || "",
       phone: contactRow?.phone || "",
       whatsapp: contactRow?.whatsapp || "",
@@ -123,6 +150,14 @@ function mapSupabaseStore(categoriesRows, mediaRows, packageRows, contactRow) {
       categories: {
         title: contactRow?.home_categories_title || defaultStore.homeSettings.categories.title,
       },
+      brandLogos: {
+        title: contactRow?.brand_logos_title || defaultStore.homeSettings.brandLogos.title,
+        intro: contactRow?.brand_logos_intro || defaultStore.homeSettings.brandLogos.intro,
+        logos:
+          Array.isArray(contactRow?.brand_logos_urls) && contactRow.brand_logos_urls.length
+            ? contactRow.brand_logos_urls.filter(Boolean)
+            : defaultStore.homeSettings.brandLogos.logos,
+      },
       parallax: {
         title: contactRow?.home_parallax_title || defaultStore.homeSettings.parallax.title,
         intro: contactRow?.home_parallax_intro || defaultStore.homeSettings.parallax.intro,
@@ -131,6 +166,13 @@ function mapSupabaseStore(categoriesRows, mediaRows, packageRows, contactRow) {
         ctaHref:
           contactRow?.home_parallax_cta_href || defaultStore.homeSettings.parallax.ctaHref,
         image: contactRow?.home_parallax_image_url || defaultStore.homeSettings.parallax.image,
+      },
+      packageCta: {
+        title: contactRow?.package_cta_title || defaultStore.homeSettings.packageCta.title,
+        intro: contactRow?.package_cta_intro || defaultStore.homeSettings.packageCta.intro,
+        ctaLabel:
+          contactRow?.package_cta_cta_label || defaultStore.homeSettings.packageCta.ctaLabel,
+        ctaHref: contactRow?.package_cta_cta_href || defaultStore.homeSettings.packageCta.ctaHref,
       },
     },
   };
@@ -166,7 +208,7 @@ async function fetchSupabaseStore() {
   const { data: packageRows, error: packageError } = await supabase
     .from("packages")
     .select(
-      "id, title, theme, is_featured, features, price_individual, price_plan, price_unico, button_text, sort_order"
+      "id, title, theme, is_featured, features, price_individual, price_plan, price_plan_label, price_plan_note, price_unico, button_text, sort_order"
     )
     .order("sort_order", { ascending: true });
 
@@ -184,7 +226,7 @@ async function fetchSupabaseStore() {
     if (contactError.code === "42703") {
       const fallbackContactResponse = await supabase
         .from("contact_settings")
-        .select(CONTACT_SETTINGS_BASE_SELECT)
+        .select(CONTACT_SETTINGS_LEGACY_SELECT)
         .limit(1)
         .maybeSingle();
 
@@ -499,6 +541,10 @@ export function GalleryProvider({ children }) {
     setError("");
 
     try {
+      const uploadedPhotoUrl =
+        payload.contactPhotoFile && mode === "supabase" && isSupabaseConfigured
+          ? await uploadFileToSupabase(payload.contactPhotoFile, "home", "contact")
+          : "";
       const homeSettingsFields = payload.homeSettings
         ? {
             hero_title: payload.homeSettings.hero?.title,
@@ -511,11 +557,18 @@ export function GalleryProvider({ children }) {
             hero_image_urls: payload.homeSettings.hero?.images,
             hero_video_url: payload.homeSettings.hero?.video,
             home_categories_title: payload.homeSettings.categories?.title,
+            brand_logos_title: payload.homeSettings.brandLogos?.title,
+            brand_logos_intro: payload.homeSettings.brandLogos?.intro,
+            brand_logos_urls: payload.homeSettings.brandLogos?.logos,
             home_parallax_title: payload.homeSettings.parallax?.title,
             home_parallax_intro: payload.homeSettings.parallax?.intro,
             home_parallax_cta_label: payload.homeSettings.parallax?.ctaLabel,
             home_parallax_cta_href: payload.homeSettings.parallax?.ctaHref,
             home_parallax_image_url: payload.homeSettings.parallax?.image,
+            package_cta_title: payload.homeSettings.packageCta?.title,
+            package_cta_intro: payload.homeSettings.packageCta?.intro,
+            package_cta_cta_label: payload.homeSettings.packageCta?.ctaLabel,
+            package_cta_cta_href: payload.homeSettings.packageCta?.ctaHref,
           }
         : {};
 
@@ -524,18 +577,35 @@ export function GalleryProvider({ children }) {
 
         const { data: existing, error: existingError } = await supabase
           .from("contact_settings")
-          .select("id")
+          .select("id, photo_url")
           .limit(1)
           .maybeSingle();
 
-        if (existingError) {
+        let existingContact = existing;
+        let existingPhotoFallback = "";
+
+        if (existingError?.code === "42703") {
+          const fallbackExistingResponse = await supabase
+            .from("contact_settings")
+            .select("id")
+            .limit(1)
+            .maybeSingle();
+
+          if (fallbackExistingResponse.error) {
+            throw fallbackExistingResponse.error;
+          }
+
+          existingContact = fallbackExistingResponse.data;
+        } else if (existingError) {
           throw existingError;
         }
 
-        if (existing?.id) {
+        if (existingContact?.id) {
+          const nextPhotoUrl = uploadedPhotoUrl || payload.photoUrl || "";
           const basePayload = {
             title: payload.title,
             intro: payload.intro,
+            photo_url: nextPhotoUrl,
             email: payload.email,
             phone: payload.phone,
             whatsapp: payload.whatsapp,
@@ -547,7 +617,7 @@ export function GalleryProvider({ children }) {
           let { error: updateError } = await supabase
             .from("contact_settings")
             .update(basePayload)
-            .eq("id", existing.id);
+            .eq("id", existingContact.id);
 
           if (updateError?.code === "42703") {
             const safeHomeSettingsFields = stripUnsupportedContactFields(homeSettingsFields);
@@ -556,6 +626,7 @@ export function GalleryProvider({ children }) {
               .update({
                 title: payload.title,
                 intro: payload.intro,
+                photo_url: nextPhotoUrl,
                 email: payload.email,
                 phone: payload.phone,
                 whatsapp: payload.whatsapp,
@@ -564,16 +635,22 @@ export function GalleryProvider({ children }) {
                 cta_label: payload.ctaLabel,
                 ...safeHomeSettingsFields,
               })
-              .eq("id", existing.id));
+              .eq("id", existingContact.id));
           }
 
           if (updateError) {
             throw updateError;
           }
+
+          if (uploadedPhotoUrl && existingContact.photo_url && existingContact.photo_url !== uploadedPhotoUrl) {
+            await removeFilesFromSupabase([existingContact.photo_url]);
+          }
         } else {
+          const nextPhotoUrl = uploadedPhotoUrl || payload.photoUrl || "";
           const basePayload = {
             title: payload.title,
             intro: payload.intro,
+            photo_url: nextPhotoUrl,
             email: payload.email,
             phone: payload.phone,
             whatsapp: payload.whatsapp,
@@ -589,6 +666,7 @@ export function GalleryProvider({ children }) {
             ({ error: insertError } = await supabase.from("contact_settings").insert({
               title: payload.title,
               intro: payload.intro,
+              photo_url: nextPhotoUrl,
               email: payload.email,
               phone: payload.phone,
               whatsapp: payload.whatsapp,
@@ -613,6 +691,7 @@ export function GalleryProvider({ children }) {
         contact: {
           title: payload.title,
           intro: payload.intro,
+          photoUrl: payload.photoUrl,
           email: payload.email,
           phone: payload.phone,
           whatsapp: payload.whatsapp,
@@ -640,6 +719,8 @@ export function GalleryProvider({ children }) {
           features: payload.features,
           price_individual: payload.priceIndividual,
           price_plan: payload.pricePlan,
+          price_plan_label: payload.pricePlanLabel,
+          price_plan_note: payload.pricePlanNote,
           price_unico: payload.priceUnico,
           button_text: payload.buttonText,
           sort_order: store.packages.length,
@@ -678,6 +759,8 @@ export function GalleryProvider({ children }) {
             features: payload.features,
             price_individual: payload.priceIndividual,
             price_plan: payload.pricePlan,
+            price_plan_label: payload.pricePlanLabel,
+            price_plan_note: payload.pricePlanNote,
             price_unico: payload.priceUnico,
             button_text: payload.buttonText,
           })
@@ -1189,10 +1272,13 @@ export function GalleryProvider({ children }) {
   const updateHomeSettings = async ({
     hero,
     categories,
+    brandLogos,
+    packageCta,
     parallax,
     heroImageFile,
     heroSequenceFiles,
     heroVideoFile,
+    brandLogoFiles,
     parallaxImageFile,
   }) => {
     setSaving(true);
@@ -1209,6 +1295,14 @@ export function GalleryProvider({ children }) {
       const nextCategories = {
         ...getDefaultGalleryStore().homeSettings.categories,
         ...categories,
+      };
+      const nextBrandLogos = {
+        ...getDefaultGalleryStore().homeSettings.brandLogos,
+        ...brandLogos,
+      };
+      const nextPackageCta = {
+        ...getDefaultGalleryStore().homeSettings.packageCta,
+        ...packageCta,
       };
       const nextParallax = {
         ...getDefaultGalleryStore().homeSettings.parallax,
@@ -1256,6 +1350,14 @@ export function GalleryProvider({ children }) {
           );
         }
 
+        if (brandLogoFiles?.length) {
+          const uploadedBrandLogos = await Promise.all(
+            brandLogoFiles.map((file) => uploadFileToSupabase(file, "home", "brand-logos"))
+          );
+
+          nextBrandLogos.logos = [...new Set([...nextBrandLogos.logos, ...uploadedBrandLogos])];
+        }
+
         if (parallaxImageFile) {
           nextParallax.image = await uploadFileToSupabase(parallaxImageFile, "home", "parallax");
         }
@@ -1265,6 +1367,8 @@ export function GalleryProvider({ children }) {
           homeSettings: {
             hero: nextHero,
             categories: nextCategories,
+            brandLogos: nextBrandLogos,
+            packageCta: nextPackageCta,
             parallax: nextParallax,
           },
         });
@@ -1273,12 +1377,14 @@ export function GalleryProvider({ children }) {
           previousHero.image,
           ...(previousHero.images || []),
           previousHero.video,
+          ...((store.homeSettings?.brandLogos?.logos || [])),
           previousParallax.image,
         ];
         const nextUrls = new Set([
           nextHero.image,
           ...(nextHero.images || []),
           nextHero.video,
+          ...nextBrandLogos.logos,
           nextParallax.image,
         ]);
 
@@ -1291,6 +1397,8 @@ export function GalleryProvider({ children }) {
         homeSettings: {
           hero: nextHero,
           categories: nextCategories,
+          brandLogos: nextBrandLogos,
+          packageCta: nextPackageCta,
           parallax: nextParallax,
         },
       });

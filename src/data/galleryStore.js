@@ -74,6 +74,8 @@ const defaultGalleryStore = {
       ],
       priceIndividual: "COP 1.200.000",
       pricePlan: "COP 1.000.000",
+      pricePlanLabel: "Precio plan mensual",
+      pricePlanNote: "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       priceUnico: "COP 1.200.000",
       buttonText: "Comencemos",
     },
@@ -91,6 +93,8 @@ const defaultGalleryStore = {
       ],
       priceIndividual: "COP 2.000.000",
       pricePlan: "COP 1.800.000",
+      pricePlanLabel: "Precio plan mensual",
+      pricePlanNote: "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       priceUnico: "COP 2.000.000",
       buttonText: "Comencemos",
     },
@@ -108,6 +112,8 @@ const defaultGalleryStore = {
       ],
       priceIndividual: "A convenir",
       pricePlan: "Descuento disponible segun volumen",
+      pricePlanLabel: "Precio plan mensual",
+      pricePlanNote: "Ideal para marcas que quieren mantener una imagen constante y profesional.",
       priceUnico: "Cotizacion personalizada",
       buttonText: "Comencemos",
     },
@@ -115,6 +121,7 @@ const defaultGalleryStore = {
   contact: {
     title: "Contacto",
     intro: "Hablemos de tu proyecto, tus paquetes o la produccion visual que necesitas.",
+    photoUrl: "",
     email: "hola@favisual.com",
     phone: "+57 300 000 0000",
     whatsapp: "https://wa.me/573000000000",
@@ -137,12 +144,24 @@ const defaultGalleryStore = {
     categories: {
       title: "Explora el trabajo por linea visual",
     },
+    brandLogos: {
+      title: "Marcas con las que he trabajado",
+      intro: "Logos de marcas, clientes o proyectos que puedes destacar como referencia visual.",
+      logos: [],
+    },
     parallax: {
       title: "Captura momentos inolvidables",
       intro: "Fotografia profesional para marcas, eventos y personas que buscan calidad.",
       ctaLabel: "Reserva tu sesion",
       ctaHref: "/contacto",
       image: "/parallax.jpg",
+    },
+    packageCta: {
+      title: "Arma tu paquete conmigo",
+      intro:
+        "Creamos una propuesta visual a tu medida para que tu marca mantenga una imagen clara, elegante y coherente.",
+      ctaLabel: "Quiero mi paquete",
+      ctaHref: "/contacto",
     },
   },
 };
@@ -180,6 +199,10 @@ function normalizePackage(item, index) {
     features: Array.isArray(item.features) ? item.features.filter(Boolean) : [],
     priceIndividual: item.priceIndividual || "",
     pricePlan: item.pricePlan || "",
+    pricePlanLabel: item.pricePlanLabel || "Precio plan mensual",
+    pricePlanNote:
+      item.pricePlanNote ||
+      "Ideal para marcas que quieren mantener una imagen constante y profesional.",
     priceUnico: item.priceUnico || "",
     buttonText: item.buttonText || "Comencemos",
   };
@@ -189,9 +212,14 @@ function normalizeHomeSettings(homeSettings) {
   const defaults = fallbackClone().homeSettings;
   const hero = homeSettings?.hero || {};
   const categories = homeSettings?.categories || {};
+  const brandLogos = homeSettings?.brandLogos || {};
   const parallax = homeSettings?.parallax || {};
+  const packageCta = homeSettings?.packageCta || {};
   const normalizedImages = Array.isArray(hero.images)
     ? hero.images.map((item) => item?.trim()).filter(Boolean)
+    : [];
+  const normalizedBrandLogos = Array.isArray(brandLogos.logos)
+    ? brandLogos.logos.map((item) => item?.trim()).filter(Boolean)
     : [];
 
   return {
@@ -211,12 +239,23 @@ function normalizeHomeSettings(homeSettings) {
     categories: {
       title: categories.title || defaults.categories.title,
     },
+    brandLogos: {
+      title: brandLogos.title || defaults.brandLogos.title,
+      intro: brandLogos.intro || defaults.brandLogos.intro,
+      logos: normalizedBrandLogos.length ? normalizedBrandLogos : defaults.brandLogos.logos,
+    },
     parallax: {
       title: parallax.title || defaults.parallax.title,
       intro: parallax.intro || defaults.parallax.intro,
       ctaLabel: parallax.ctaLabel || defaults.parallax.ctaLabel,
       ctaHref: parallax.ctaHref || defaults.parallax.ctaHref,
       image: parallax.image || defaults.parallax.image,
+    },
+    packageCta: {
+      title: packageCta.title || defaults.packageCta.title,
+      intro: packageCta.intro || defaults.packageCta.intro,
+      ctaLabel: packageCta.ctaLabel || defaults.packageCta.ctaLabel,
+      ctaHref: packageCta.ctaHref || defaults.packageCta.ctaHref,
     },
   };
 }
