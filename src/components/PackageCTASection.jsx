@@ -38,7 +38,7 @@ export default function PackageCTASection() {
             </div>
 
             <div className="rounded-[2rem] border border-white/10 bg-black/20 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-              <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">CTA final</p>
+              {/* <p className="text-[11px] uppercase tracking-[0.32em] text-white/45">CTA final</p>
               <div className="mt-4 space-y-4">
                 <p className="text-xl font-semibold text-white">
                   Una tarjeta para cerrar la pagina con una invitacion clara y directa.
@@ -47,7 +47,7 @@ export default function PackageCTASection() {
                   Este bloque funciona muy bien cuando quieres convertir la visita en una
                   conversacion. Es un cierre visual fuerte y fácil de editar desde el panel.
                 </p>
-              </div>
+              </div> */}
 
               <a
                 href={ctaHref}
