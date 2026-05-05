@@ -3,6 +3,20 @@
 @import "swiper/css/effect-coverflow";
 @import "swiper/css/pagination";
 
+.categories-banner .swiper-slide {
+  transition: transform 240ms ease, opacity 240ms ease;
+}
+
+.categories-banner .swiper-slide-active {
+  transform: translateY(-4px) scale(1.01);
+  opacity: 1;
+}
+
+.categories-banner .swiper-slide-next,
+.categories-banner .swiper-slide-prev {
+  opacity: 0.96;
+}
+
 @keyframes premiumBorder {
   0% {
     background-position: 0% 50%;

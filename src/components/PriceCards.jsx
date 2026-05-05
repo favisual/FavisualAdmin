@@ -1,10 +1,13 @@
+import { useMemo, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
-import { EffectCoverflow, Pagination } from "swiper/modules";
+import { EffectCoverflow, Navigation, Pagination } from "swiper/modules";
 import "swiper/css";
 import "swiper/css/effect-coverflow";
+import "swiper/css/navigation";
 import "swiper/css/pagination";
 import logo from "../assets/FaVisual.svg";
 import { useGallery } from "../context/GalleryContext";
+import { FaArrowLeft, FaArrowRight } from "react-icons/fa";
 
 const themeStyles = {
   cyan: {
@@ -211,9 +214,17 @@ function PackageCard({ card, whatsappUrl, desktop = false }) {
 
 export default function PriceCards() {
   const { packages, contact } = useGallery();
+  const [activeMobileIndex, setActiveMobileIndex] = useState(0);
   const featuredPackage = packages.find((item) => item.isFeatured) || packages[0];
   const desktopGridClass =
     packages.length >= 3 ? "xl:grid-cols-3" : packages.length === 2 ? "lg:grid-cols-2" : "grid-cols-1";
+  const mobileProgress = useMemo(() => {
+    if (packages.length <= 1) {
+      return 100;
+    }
+
+    return ((activeMobileIndex + 1) / packages.length) * 100;
+  }, [activeMobileIndex, packages.length]);
 
   if (!packages.length) {
     return null;
@@ -258,6 +269,30 @@ export default function PriceCards() {
         </div>
 
         <div className="mt-12 lg:hidden">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.35em] text-white/45">Desliza</p>
+              <p className="mt-2 text-sm text-white/65">
+                Hay mas paquetes hacia los lados.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="packages-prev flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white transition-colors hover:bg-white/10"
+                aria-label="Paquete anterior"
+              >
+                <FaArrowLeft />
+              </button>
+              <button
+                type="button"
+                className="packages-next flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white transition-colors hover:bg-white/10"
+                aria-label="Paquete siguiente"
+              >
+                <FaArrowRight />
+              </button>
+            </div>
+          </div>
           <Swiper
             effect="coverflow"
             grabCursor={true}
@@ -266,6 +301,10 @@ export default function PriceCards() {
             initialSlide={Math.max(0, packages.findIndex((item) => item.id === featuredPackage?.id))}
             spaceBetween={28}
             loop={false}
+            navigation={{
+              prevEl: ".packages-prev",
+              nextEl: ".packages-next",
+            }}
             coverflowEffect={{
               rotate: 0,
               stretch: 0,
@@ -275,7 +314,13 @@ export default function PriceCards() {
               scale: 0.94,
             }}
             pagination={{ clickable: true }}
-            modules={[EffectCoverflow, Pagination]}
+            onSlideChange={(swiper) => {
+              setActiveMobileIndex(swiper.activeIndex);
+            }}
+            onSwiper={(swiper) => {
+              setActiveMobileIndex(swiper.activeIndex);
+            }}
+            modules={[EffectCoverflow, Navigation, Pagination]}
             className="w-full overflow-visible"
           >
             {packages.map((card) => (
@@ -284,6 +329,17 @@ export default function PriceCards() {
               </SwiperSlide>
             ))}
           </Swiper>
+          <div className="mt-4 flex items-center justify-between gap-4">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-300 via-orange-400 to-white transition-[width] duration-500"
+                style={{ width: `${mobileProgress}%` }}
+              />
+            </div>
+            <p className="text-xs uppercase tracking-[0.3em] text-white/45">
+              {String(activeMobileIndex + 1).padStart(2, "0")} / {String(packages.length).padStart(2, "0")}
+            </p>
+          </div>
         </div>
 
         <div className={`mt-12 hidden gap-6 lg:grid ${desktopGridClass}`}>

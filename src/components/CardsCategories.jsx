@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, EffectCoverflow, Navigation, Pagination } from "swiper/modules";
 import { NavLink } from "react-router-dom";
@@ -12,6 +12,13 @@ import { useGallery } from "../context/GalleryContext";
 function CardsCategories() {
   const { categories, homeSettings } = useGallery();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.matchMedia("(min-width: 900px)").matches;
+  });
   const sectionTitle =
     homeSettings?.categories?.title?.trim() || "Explora el trabajo por linea visual";
   const canLoop = categories.length > 4;
@@ -22,6 +29,21 @@ function CardsCategories() {
 
     return ((activeIndex + 1) / categories.length) * 100;
   }, [activeIndex, categories.length]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 900px)");
+
+    const updateDesktopState = (event) => {
+      setIsDesktop(event.matches);
+    };
+
+    setIsDesktop(mediaQuery.matches);
+    mediaQuery.addEventListener("change", updateDesktopState);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateDesktopState);
+    };
+  }, []);
 
   if (!categories.length) {
     return null;
@@ -61,10 +83,15 @@ function CardsCategories() {
         </div>
 
         <Swiper
-          effect="coverflow"
-          grabCursor={true}
-          centeredSlides={false}
+          key={isDesktop ? "categories-desktop" : "categories-mobile"}
+          effect={isDesktop ? "slide" : "coverflow"}
+          grabCursor={!isDesktop}
+          allowTouchMove={!isDesktop}
+          centeredSlides={!isDesktop}
           loop={canLoop}
+          preventClicks={false}
+          preventClicksPropagation={false}
+          threshold={20}
           autoplay={{
             delay: 3600,
             disableOnInteraction: false,
@@ -89,6 +116,9 @@ function CardsCategories() {
             const nextIndex = canLoop ? swiper.realIndex : swiper.activeIndex;
             setActiveIndex(nextIndex);
           }}
+          observer={true}
+          observeParents={true}
+          resizeObserver={true}
           slidesPerView={1.15}
           spaceBetween={18}
           breakpoints={{
@@ -97,12 +127,16 @@ function CardsCategories() {
               spaceBetween: 22,
             },
             900: {
-              slidesPerView: 3.15,
+              slidesPerView: 2.55,
               spaceBetween: 24,
             },
             1200: {
+              slidesPerView: 3.2,
+              spaceBetween: 28,
+            },
+            1536: {
               slidesPerView: 4.15,
-              spaceBetween: 26,
+              spaceBetween: 30,
             },
           }}
           coverflowEffect={{
@@ -114,13 +148,13 @@ function CardsCategories() {
             scale: 0.96,
           }}
           modules={[Autoplay, EffectCoverflow, Navigation, Pagination]}
-          className="w-full overflow-visible"
+          className={`w-full overflow-visible ${isDesktop ? "categories-banner" : ""}`}
         >
           {categories.map((category) => (
-            <SwiperSlide key={category.id} className="h-[430px] md:h-[500px]">
+            <SwiperSlide key={category.id} className="relative h-[430px] md:h-[500px]">
               <NavLink
                 to={`/categories/${category.slug}`}
-                className="relative overflow-hidden bg-black text-neutral-900 h-[430px] md:h-[500px] w-full flex items-end justify-center text-xl font-light text-center rounded-[1.7rem] shadow-lg group"
+                className="category-card relative z-10 block h-[430px] w-full overflow-hidden rounded-[1.7rem] bg-black text-center text-xl font-light text-neutral-900 shadow-lg group md:h-[500px]"
               >
                 <img
                   className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
